@@ -132,7 +132,7 @@ class SecondScreen(Screen):
             else:
                 bond_type = "ionic"
             self.label.text = f"EN Difference between {elements[0]} and {elements[1]} is: \n |{en1:.1f} - {en2:.1f}| = {en_difference:.1f} \n{bond_type}"
-            Clipboard.copy(str(en_difference))
+            Clipboard.copy(str(f'{en_difference:.1f}'))
         except ValueError as e:
             self.label.text = f"Invalid Input"
         except Exception as e:
