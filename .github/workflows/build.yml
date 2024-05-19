@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y openjdk-8-jdk
+          sudo apt-get install -y openjdk-8-jdk wget unzip
           python3 -m pip install --upgrade pip
           python3 -m pip install buildozer
 
@@ -46,6 +46,12 @@ jobs:
           mkdir -p $ANDROID_HOME/licenses
           echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-preview-license
+
+      - name: Install Android NDK
+        run: |
+          wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+          unzip android-ndk-r25b-linux.zip -d $HOME
+          mv $HOME/android-ndk-r25b $ANDROID_HOME/ndk-bundle
 
       - name: Build with Buildozer
         uses: ArtemSBulgakov/buildozer-action@v1
