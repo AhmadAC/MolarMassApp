@@ -1,65 +1,35 @@
 name: CI
-
 on:
   push:
     branches: [ main ]
-
 jobs:
   build:
     runs-on: ubuntu-20.04
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-
+          node-version: '16'
       - name: Get Date
         id: get-date
-        run: |
-          echo "date=$(/bin/date -u "+%Y%m%d")" >> $GITHUB_ENV
-        shell: bash
-
+        run: echo "date=$(/bin/date -u +%Y%m%d)" >> $GITHUB_ENV
       - name: Cache Buildozer global directory
         uses: actions/cache@v3
         with:
           path: .buildozer_global
           key: buildozer-global-${{ hashFiles('buildozer.spec') }}
-
       - name: Cache Buildozer directory
         uses: actions/cache@v3
         with:
           path: .buildozer
           key: ${{ runner.os }}-${{ env.date }}-${{ hashFiles('buildozer.spec') }}
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-8-jdk wget unzip
-          python3 -m pip install --upgrade pip
-          python3 -m pip install buildozer
-
-      - name: Accept Android SDK licenses
-        run: |
-          mkdir -p $ANDROID_HOME/licenses
-          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
-          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-preview-license
-
-      - name: Install Android NDK
-        run: |
-          wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-          unzip android-ndk-r25b-linux.zip -d $HOME
-          mv $HOME/android-ndk-r25b $ANDROID_HOME/ndk-bundle
-
       - name: Build with Buildozer
         uses: ArtemSBulgakov/buildozer-action@v1
         id: buildozer
         with:
           command: buildozer android debug
           buildozer_version: stable
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
