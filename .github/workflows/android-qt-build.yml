@@ -27,15 +27,16 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        # Using 3.11 as seen in your logs, but 3.10 should also work
-        python-version: '3.11'
+        python-version: '3.11' # Match PySide6 requirement/preference
 
     # Step 4: Install Python Dependencies
     - name: Install Python Dependencies
       run: |
         python -m pip install --upgrade pip
         # Install PySide6 first, then other dependencies
-        pip install pyside6==6.5.3 # Pin to match Qt version for consistency
+        # Pin PySide6 to match Qt version for consistency
+        pip install pyside6==6.5.3
+        # Install other dependencies from your project (adjust as needed)
         pip install molmass aqtinstall beautifulsoup4 bs4 certifi charset-normalizer defusedxml humanize idna patch py7zr requests semantic-version soupsieve typing-extensions urllib3
 
     # Step 5: Verify JSON config exists
@@ -51,13 +52,15 @@ jobs:
     # Step 6: Prepare Android Resources (Optional, if needed)
     - name: Prepare Android Resources
       run: |
-        mkdir -p src/res/drawable
+        mkdir -p src/res/drawable # Ensure standard Android resource dirs exist if needed by JSON
         if [ -f "data/icon.png" ]; then
-          cp data/icon.png src/res/drawable/icon.png
+          cp data/icon.png src/res/drawable/icon.png # Example: Copy icon
           echo "Copied icon from data/icon.png to src/res/drawable/"
         else
-          echo "Warning: data/icon.png not found."
+          # Adjust this path/logic if your icon isn't in data/icon.png
+          echo "Warning: data/icon.png not found. App might lack an icon."
         fi
+        # Add commands here to copy other resources if your JSON references them
 
     # --- Environment Setup ---
 
@@ -65,15 +68,13 @@ jobs:
     # We need qttools (containing androiddeployqt) for the host machine
     - name: Install Qt for Desktop (Host Tools)
       uses: jurplel/install-qt-action@v3
-      id: install_qt_host # Give it an ID to potentially reference outputs if needed
+      id: install_qt_host
       with:
         version: '6.5.3'
         host: 'linux'
         target: 'desktop'
         arch: 'gcc_64'
-        # Install qttools for the host; qtbase is usually included as a dependency
-        modules: 'qttools'
-        # Use caching to speed up builds
+        # *** REMOVED 'modules: qttools' - Tools are usually included by default ***
         cache: 'true'
         # Specify install directory to keep things organized
         dir: '${{ github.workspace }}/qt_host'
@@ -82,35 +83,32 @@ jobs:
     # We need qtbase libraries compiled for the Android target architecture
     - name: Install Qt for Android (Target Libraries)
       uses: jurplel/install-qt-action@v3
-      id: install_qt_target # Give it an ID
+      id: install_qt_target
       with:
         version: '6.5.3'
         host: 'linux'
         target: 'android'
-        arch: 'android_arm64_v8a'
-        # Only need core libraries for the target device
+        arch: 'android_arm64_v8a' # Choose target arch (arm64_v8a, armeabi_v7a, x86, x86_64)
+        # Usually only need qtbase for the target device unless you use more modules
         modules: 'qtbase'
-        # Use caching
         cache: 'true'
-        # Specify a separate install directory
         dir: '${{ github.workspace }}/qt_target'
-        # Set environment variables like Qt6_DIR for this installation
-        # This is important for androiddeployqt to find the target libs
-        setup-python: 'false' # Don't mess with Python path here if already set
+        # IMPORTANT: Prevent this action from interfering with Python setup
+        setup-python: 'false'
 
     # Step 8: Setup Android SDK components
     # Installs SDK, NDK, build-tools etc. and sets ANDROID_SDK_ROOT, ANDROID_NDK_ROOT
     - name: Setup Android SDK components
       uses: android-actions/setup-android@v3
-      # No specific versions needed here unless you have strict requirements
-      # The action usually picks reasonable defaults compatible with Qt
+      # This action sets up SDK/NDK based on defaults or project requirements.
+      # Check its documentation if you need specific API levels or NDK versions.
 
     # Step 9: Run androiddeployqt
     - name: Run androiddeployqt
       env:
-         # Ensure Qt6_DIR points to the *target* installation for androiddeployqt
+         # Point Qt6_DIR to the *target* Qt installation for androiddeployqt
          Qt6_DIR: ${{ github.workspace }}/qt_target/6.5.3/android_arm64_v8a
-         # Explicitly add host tools bin directory to PATH
+         # Add the *host* Qt bin directory (where androiddeployqt lives) to PATH
          PATH: ${{ github.workspace }}/qt_host/6.5.3/gcc_64/bin:$PATH
       run: |
         echo "--- Environment Variables ---"
@@ -118,21 +116,31 @@ jobs:
         echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
         echo "Qt6_DIR=$Qt6_DIR"
         echo "Host Qt Tools Path: ${{ github.workspace }}/qt_host/6.5.3/gcc_64/bin"
-        echo "Which androiddeployqt: $(which androiddeployqt)"
+        echo "Which androiddeployqt: $(which androiddeployqt || echo 'androiddeployqt not found in PATH')"
+        ls -l ${{ github.workspace }}/qt_host/6.5.3/gcc_64/bin # Verify executable exists
         echo "--- Running androiddeployqt ---"
 
+        # Verify androiddeployqt can be executed
+        if ! command -v androiddeployqt &> /dev/null; then
+            echo "ERROR: androiddeployqt command not found in PATH!"
+            echo "PATH=$PATH"
+            exit 1
+        fi
+
+        # Create output directory
         mkdir -p build-android
 
-        # Run the tool from the host installation's bin directory
-        # Qt6_DIR (pointing to target libs) should be picked up from env
+        # Run the deployment tool
+        # androiddeployqt uses Qt6_DIR to find target libs and NDK/SDK roots from env
         androiddeployqt \
           --input qt_for_python_android_deploy.json \
           --output build-android \
-          --android-platform android-33 \
-          --gradle
+          --android-platform android-33 `# Or latest stable, e.g., android-34. Must be >= minSdk` \
+          --gradle \
+          --verbose # Add verbose flag for more detailed output
 
         echo "--- androiddeployqt Finished ---"
-        ls -l build-android # Verify output directory contents
+        ls -lR build-android # Verify output directory contents recursively
 
 
     # Step 10: Build with Gradle
@@ -140,25 +148,29 @@ jobs:
       working-directory: ./build-android
       run: |
         echo "--- Building with Gradle ---"
-        # Ensure gradlew is executable (sometimes needed)
+        # Ensure gradlew is executable
         chmod +x ./gradlew
 
-        # Check required env vars are set (should be by setup-android)
+        # Verify required env vars are set (should be by setup-android)
         echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
         echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
+        # Check Java version Gradle will use
+        ./gradlew --version
 
-        # Run the Gradle build
-        ./gradlew assembleDebug --info # Use --info or --debug for more logs if needed
+        # Run the Gradle build (use assembleRelease for release builds)
+        # Use --info or --debug for more verbose Gradle output if needed
+        ./gradlew assembleDebug --info
 
         echo "--- Gradle Build Finished ---"
         # List the output APKs for verification
-        ls -l build/outputs/apk/debug/
+        echo "Listing generated APKs:"
+        find build/outputs/apk/debug/ -name "*.apk" -ls
 
     # Step 11: Upload APK artifact
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: MolarMass-Android-Debug-APK
-        # Path might vary slightly, adjust if needed after checking Gradle output
+        # Path to the generated APK(s)
         path: ./build-android/build/outputs/apk/debug/*.apk
-        if-no-files-found: error # Keep this to fail if APK isn't found
+        if-no-files-found: error # Fail the workflow if no APK is found
