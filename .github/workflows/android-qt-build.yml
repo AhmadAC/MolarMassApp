@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # ... (Keep all steps from Checkout up to Validate Android Environment) ...
+
     - name: Check out code
       uses: actions/checkout@v4
 
@@ -42,7 +44,6 @@ jobs:
         pip install pyside6==${{ env.PYSIDE_VERSION }}
         pip install aqtinstall
         pip install molmass beautifulsoup4 bs4 certifi charset-normalizer defusedxml humanize idna patch py7zr requests semantic-version soupsieve typing-extensions urllib3
-
     - name: Verify and Validate JSON Config
       run: |
         JSON_CONFIG="qt_for_python_android_deploy.json"
@@ -56,7 +57,6 @@ jobs:
         echo "--- Contents of $JSON_CONFIG ---"
         cat "$JSON_CONFIG"
         echo "--- End of $JSON_CONFIG ---"
-
     - name: Prepare Android Resources (e.g., Icon)
       run: |
         ANDROID_SRC_DIR="src"
@@ -69,65 +69,18 @@ jobs:
         else
           echo "Warning: Icon source '$ICON_SOURCE' not found. App might lack an icon or use a default."
         fi
-
     - name: Install Qt ${{ env.QT_VERSION }} for Desktop (Host Build Tools)
       run: |
         echo "Installing Qt Host tools (Desktop Linux gcc_64)..."
         python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
           --outputdir ${{ github.workspace }}/qt_host \
           --archives Tools Core Network Concurrent Widgets Gui Test Linguist
-
-        # *** ENHANCED DEBUGGING: Check what was actually created ***
-        echo "--- Debugging Qt Host Installation ---"
-        echo "Exit code of aqt install: $?" # Check the exit code explicitly
-
-        HOST_QT_BASE_DIR="${{ github.workspace }}/qt_host"
-        echo "Listing contents of base output directory: $HOST_QT_BASE_DIR"
-        ls -la "$HOST_QT_BASE_DIR"
-
-        HOST_QT_VERSION_DIR="$HOST_QT_BASE_DIR/${{ env.QT_VERSION }}"
-        echo "Checking if version directory exists: $HOST_QT_VERSION_DIR"
-        if [ -d "$HOST_QT_VERSION_DIR" ]; then
-          echo "Listing contents of version directory:"
-          ls -la "$HOST_QT_VERSION_DIR"
-        else
-          echo "ERROR: Version directory '$HOST_QT_VERSION_DIR' was NOT created."
-          # Attempt listing base dir again
-          echo "Listing base dir '$HOST_QT_BASE_DIR' again:"
-          ls -la "$HOST_QT_BASE_DIR"
-          exit 1 # Fail the step explicitly if the expected dir is missing
-        fi
-
-        HOST_QT_ARCH_DIR="$HOST_QT_VERSION_DIR/gcc_64"
-        echo "Checking if arch directory exists: $HOST_QT_ARCH_DIR"
-        if [ -d "$HOST_QT_ARCH_DIR" ]; then
-          echo "Listing contents of arch directory:"
-          ls -la "$HOST_QT_ARCH_DIR"
-        else
-           echo "ERROR: Arch directory '$HOST_QT_ARCH_DIR' was NOT created."
-           exit 1 # Fail the step
-        fi
-
-        HOST_QT_BIN_DIR="$HOST_QT_ARCH_DIR/bin"
-        echo "Checking if bin directory exists: $HOST_QT_BIN_DIR"
-        if [ -d "$HOST_QT_BIN_DIR" ]; then
-          echo "Listing contents of bin directory:"
-          ls -la "$HOST_QT_BIN_DIR"
-          echo "Checking specifically for androiddeployqt:"
-          ls -la "$HOST_QT_BIN_DIR/androiddeployqt" || echo "WARNING: androiddeployqt executable not found in bin directory!"
-        else
-           echo "ERROR: Bin directory '$HOST_QT_BIN_DIR' was NOT created."
-           exit 1 # Fail the step
-        fi
-        echo "--- End Debugging Qt Host Installation ---"
-
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
         echo "Installing Qt Target libraries (Android arm64_v8a)..."
         python -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
           --outputdir ${{ github.workspace }}/qt_target \
           --archives qtbase qt5compat
-
     - name: Install Android SDK Command-Line Tools
       run: |
         echo "Setting up Android SDK directories..."
@@ -142,13 +95,11 @@ jobs:
         echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
         echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
         echo "SDK tool paths added to GITHUB_PATH"
-
     - name: Accept Android SDK Licenses
       run: |
         echo "Accepting Android SDK licenses..."
         yes | sdkmanager --licenses
         echo "Licenses accepted."
-
     - name: Install Android SDK Components (Platform, Build Tools, NDK)
       run: |
         echo "Installing Android SDK components..."
@@ -160,59 +111,51 @@ jobs:
         NDK_PATH="$ANDROID_SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}"
         echo "Setting ANDROID_NDK_ROOT=$NDK_PATH"
         echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
-
     - name: Validate Android Environment
       run: |
         echo "--- Android Environment Validation ---"
         echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+        if [ -z "$ANDROID_SDK_ROOT" ] || [ ! -d "$ANDROID_SDK_ROOT" ]; then
+          echo "ERROR: ANDROID_SDK_ROOT is not set or directory does not exist!"
+          exit 1
+        fi
         ls -l $ANDROID_SDK_ROOT
         echo "ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
-        ls -l $ANDROID_NDK_ROOT || echo "NDK directory listing failed."
+        if [ -z "$ANDROID_NDK_ROOT" ] || [ ! -d "$ANDROID_NDK_ROOT" ]; then
+          echo "ERROR: ANDROID_NDK_ROOT is not set or directory does not exist!"
+          ls -l $ANDROID_SDK_ROOT/ndk/ || echo "NDK directory listing failed."
+          exit 1
+        fi
+        ls -l $ANDROID_NDK_ROOT
         echo "Checking key tools in PATH:"
         which sdkmanager
-        which adb || echo "adb not in PATH yet"
+        which adb || echo "adb (platform-tools) not found in PATH yet" # Updated message slightly
         which ndk-build || echo "ndk-build not found in PATH (expected)"
         java -version
-        echo "Current PATH (before adding Qt Host): $PATH"
+        echo "Current PATH (before adding Qt Host): $PATH" # Log PATH before the next step
         echo "--- Validation Complete ---"
-
+    # ***** ADD THIS NEW STEP *****
     - name: Add Qt Host Tools to PATH
       run: |
-        QT_HOST_BIN_DIR="${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
-        echo "Adding Qt Host bin to GITHUB_PATH: $QT_HOST_BIN_DIR"
-        # Verify directory exists before adding to PATH
-        if [ ! -d "$QT_HOST_BIN_DIR" ]; then
-           echo "ERROR: Qt Host bin directory '$QT_HOST_BIN_DIR' not found! Cannot add to PATH."
-           exit 1
-        fi
-        echo "$QT_HOST_BIN_DIR" >> $GITHUB_PATH
-        echo "Verifying androiddeployqt existence again in $QT_HOST_BIN_DIR:"
-        ls -la "$QT_HOST_BIN_DIR/androiddeployqt" || echo "WARNING: androiddeployqt check failed in Add Path step!"
-
+        echo "Adding Qt Host bin to GITHUB_PATH: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
+        echo "${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin" >> $GITHUB_PATH
     - name: Run androiddeployqt to Generate Gradle Project
       env:
+        # Only need Qt6_DIR here now, PATH is handled by GITHUB_PATH
         Qt6_DIR: ${{ github.workspace }}/qt_target/${{ env.QT_VERSION }}/android_arm64_v8a
       run: |
         echo "--- Running androiddeployqt ---"
-        echo "Using Qt Host Tools from PATH"
+        echo "Using Qt Host Tools from PATH" # Updated message
         echo "Using Qt Target Libs from: $Qt6_DIR"
-        echo "Current PATH: $PATH"
-        QT_HOST_BIN_DIR_IN_STEP="${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
-        echo "Verifying androiddeployqt existence one more time in $QT_HOST_BIN_DIR_IN_STEP:"
-        ls -la "$QT_HOST_BIN_DIR_IN_STEP/androiddeployqt" || echo "WARNING: androiddeployqt check failed *inside* Run step!"
-        echo "Result of which androiddeployqt:"
-        which androiddeployqt || echo "'which' command failed to find androiddeployqt"
-        echo "Result of command -v androiddeployqt:"
-        command -v androiddeployqt || echo "'command -v' failed to find androiddeployqt"
-
+        echo "Current PATH: $PATH" # Log the PATH *inside* the step to verify
+        # This check should now pass because the path was added via GITHUB_PATH
         if ! command -v androiddeployqt &> /dev/null; then
-            echo "ERROR: androiddeployqt command not found! Check GITHUB_PATH step and file existence/permissions."
+            echo "ERROR: androiddeployqt command not found! Check GITHUB_PATH step."
             exit 1
         fi
-
+        which androiddeployqt # Verify it's found
         echo "Creating build directory: build-android"
         mkdir -p build-android
-
         echo "Executing androiddeployqt..."
         androiddeployqt \
           --input qt_for_python_android_deploy.json \
@@ -221,11 +164,9 @@ jobs:
           --jdk "$JAVA_HOME" \
           --gradle \
           --verbose
-
         echo "--- androiddeployqt finished ---"
         echo "Listing generated project structure:"
         ls -l build-android
-
     - name: Build APK with Gradle
       working-directory: ./build-android
       run: |
@@ -237,11 +178,9 @@ jobs:
         fi
         echo "Making gradlew executable..."
         chmod +x ./gradlew
-
         echo "Running Gradle build (assembleDebug)..."
         ./gradlew assembleDebug --info
         echo "--- Gradle build finished ---"
-
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
