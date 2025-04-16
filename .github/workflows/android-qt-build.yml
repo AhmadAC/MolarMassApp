@@ -75,16 +75,16 @@ jobs:
         echo "Installing Qt Host tools (Desktop Linux gcc_64)..."
         python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
           --outputdir ${{ github.workspace }}/qt_host \
-          --archives Tools Core Network Concurrent Widgets Gui Test Linguist \
-          --noarchives
+          --archives Tools Core Network Concurrent Widgets Gui Test Linguist
+          # Removed --noarchives
 
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
         echo "Installing Qt Target libraries (Android arm64_v8a)..."
         python -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
           --outputdir ${{ github.workspace }}/qt_target \
-          --modules Qt5Compat Core Network Concurrent Widgets Gui \
-          --noarchives
+          --modules Qt5Compat Core Network Concurrent Widgets Gui
+          # Removed --noarchives
 
     - name: Install Android SDK Command-Line Tools
       run: |
