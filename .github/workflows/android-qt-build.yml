@@ -51,11 +51,11 @@ jobs:
 
     - name: Install Qt for Desktop (Host Tools)
       run: |
-        python -m aqt install-qt linux desktop 6.5.0 gcc_64 --outputdir ${{ github.workspace }}/qt_host/Qt --verbose
+        python -m aqt install-qt linux desktop 6.5.0 gcc_64 --outputdir ${{ github.workspace }}/qt_host/Qt
 
     - name: Install Qt for Android (Target Libraries)
       run: |
-        python -m aqt install-qt linux android 6.5.0 android_arm64_v8a --outputdir ${{ github.workspace }}/qt_target/Qt --verbose
+        python -m aqt install-qt linux android 6.5.0 android_arm64_v8a --outputdir ${{ github.workspace }}/qt_target/Qt
 
     - name: Setup Android SDK components
       uses: android-actions/setup-android@v3
