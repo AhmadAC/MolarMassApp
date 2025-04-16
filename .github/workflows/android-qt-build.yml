@@ -93,10 +93,15 @@ jobs:
         ls -l $ANDROID_SDK_ROOT
         ls -l $ANDROID_NDK_ROOT
 
+    - name: Debug PATH
+      run: |
+        echo "PATH=$PATH"
+        which mkdir || echo "mkdir not found!"
+
     - name: Run androiddeployqt
       env:
         Qt6_DIR: ${{ github.workspace }}/qt_target/Qt/6.5.0/android_arm64_v8a
-        PATH: ${{ github.workspace }}/qt_host/Qt/6.5.0/gcc_64/bin:$PATH
+        PATH: /usr/bin:/bin:${{ github.workspace }}/qt_host/Qt/6.5.0/gcc_64/bin:$PATH
       run: |
         echo "--- Running androiddeployqt ---"
         if ! command -v androiddeployqt &> /dev/null; then
