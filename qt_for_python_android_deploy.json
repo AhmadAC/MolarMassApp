@@ -5,37 +5,21 @@
     "application-version-code": "2",
     "application-version-name": "1.1",
 
-    // --- Deployment Configuration ---
     "deploy-plugin": "PySide6",
-    // Source directory for Android-specific template files (AndroidManifest.xml, etc.)
-    // androiddeployqt will often copy resources specified below from the root
-    // or look relative to this directory. Create './src/' if needed.
     "android-package-source-directory": "src",
     "entry-point-script": "main.py",
-
-    // --- Python Dependencies ---
     "python-dependencies": [
         "molmass"
     ],
 
-    // --- Extra Python Modules ---
     "extra-modules": [],
 
-    // --- Android Specific Settings ---
     "android-settings": {
         "MIN_SDK_VERSION": "24",
         "TARGET_SDK_VERSION": "33",
-        // **MODIFIED HERE:** Still use the base name.
-        // We will need to ensure the file is copied correctly.
         "APPLICATION_ICON": "icon",
         "PERMISSIONS": []
-        // Presplash is handled differently in Qt Android apps, usually via themes
-        // or the AndroidManifest.xml, not directly by this JSON setting like Buildozer.
-        // You might need to customize AndroidManifest.xml in the 'src' directory
-        // to add a splash screen theme.
     },
-
-    // --- Qt Modules ---
     "qt-modules": [
         "Core",
         "Gui",
