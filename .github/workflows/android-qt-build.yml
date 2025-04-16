@@ -1,44 +1,35 @@
-# .github/workflows/android-qt-build.yml
-
 name: Build Android APK (Qt for Python)
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch:
 
 jobs:
   build-android-qt:
     runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Check out code
     - name: Check out code
       uses: actions/checkout@v4
 
-    # Step 2: Set up Java (Needed for Android SDK/Gradle)
     - name: Set up Java
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: '17' # Often required by modern Android Gradle Plugin
+        java-version: '17'
 
-    # Step 3: Set up Python
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    # Step 4: Install Python Dependencies
     - name: Install Python Dependencies
       run: |
         python -m pip install --upgrade pip
-        # Install PySide6 first, matching the target Qt version
-        pip install pyside6==6.5.0 # Changed from 6.5.3
-        # Install other dependencies
+        pip install pyside6==6.5.0
         pip install molmass aqtinstall beautifulsoup4 bs4 certifi charset-normalizer defusedxml humanize idna patch py7zr requests semantic-version soupsieve typing-extensions urllib3
 
-    # Step 5: Verify JSON config exists
     - name: Verify JSON config exists
       run: |
         if [ ! -f qt_for_python_android_deploy.json ]; then
@@ -48,76 +39,44 @@ jobs:
         echo "qt_for_python_android_deploy.json found."
         cat qt_for_python_android_deploy.json
 
-    # Step 6: Prepare Android Resources (Optional, if needed)
     - name: Prepare Android Resources
       run: |
-        mkdir -p src/res/drawable # Ensure standard Android resource dirs exist if needed by JSON
+        mkdir -p src/res/drawable
         if [ -f "data/icon.png" ]; then
-          cp data/icon.png src/res/drawable/icon.png # Example: Copy icon
+          cp data/icon.png src/res/drawable/icon.png
           echo "Copied icon from data/icon.png to src/res/drawable/"
         else
           echo "Warning: data/icon.png not found. App might lack an icon."
         fi
-        # Add commands here to copy other resources if your JSON references them
 
-    # --- Environment Setup ---
-
-    # Step 7a: Install Qt for Desktop (Host Tools)
     - name: Install Qt for Desktop (Host Tools)
-      uses: jurplel/install-qt-action@v3
-      id: install_qt_host
-      with:
-        version: '6.5.0' # Changed from 6.5.3
-        host: 'linux'
-        target: 'desktop'
-        arch: 'gcc_64'
-        # No modules needed, tools are included
-        cache: 'true'
-        dir: '${{ github.workspace }}/qt_host'
+      run: |
+        python -m aqt install-qt linux desktop 6.5.0 gcc_64 --outputdir ${{ github.workspace }}/qt_host/Qt --verbose
 
-    # Step 7b: Install Qt for Android (Target Libraries)
     - name: Install Qt for Android (Target Libraries)
-      uses: jurplel/install-qt-action@v3
-      id: install_qt_target
-      with:
-        version: '6.5.0' # Changed from 6.5.3
-        host: 'linux'
-        target: 'android'
-        arch: 'android_arm64_v8a' # Choose target arch
-        modules: 'qtbase' # qtbase is usually required for android target
-        cache: 'true'
-        dir: '${{ github.workspace }}/qt_target'
-        setup-python: 'false'
+      run: |
+        python -m aqt install-qt linux android 6.5.0 android_arm64_v8a --outputdir ${{ github.workspace }}/qt_target/Qt --verbose
 
-    # Step 8: Setup Android SDK components
     - name: Setup Android SDK components
       uses: android-actions/setup-android@v3
 
-    # Step 9: Run androiddeployqt
-    - name: Run androiddeployqt
-      env:
-         # Point Qt6_DIR to the *target* Qt installation (updated version)
-         Qt6_DIR: ${{ github.workspace }}/qt_target/6.5.0/android_arm64_v8a # Updated path
-         # Add the *host* Qt bin directory (updated version) to PATH
-         PATH: ${{ github.workspace }}/qt_host/6.5.0/gcc_64/bin:$PATH # Updated path
+    - name: Debug Environment Variables
       run: |
-        echo "--- Environment Variables ---"
         echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
         echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
-        echo "Qt6_DIR=$Qt6_DIR"
-        echo "Host Qt Tools Path: ${{ github.workspace }}/qt_host/6.5.0/gcc_64/bin" # Updated path
-        echo "Which androiddeployqt: $(which androiddeployqt || echo 'androiddeployqt not found in PATH')"
-        ls -l ${{ github.workspace }}/qt_host/6.5.0/gcc_64/bin # Updated path
-        echo "--- Running androiddeployqt ---"
+        echo "PATH=$PATH"
 
+    - name: Run androiddeployqt
+      env:
+        Qt6_DIR: ${{ github.workspace }}/qt_target/Qt/6.5.0/android_arm64_v8a
+        PATH: ${{ github.workspace }}/qt_host/Qt/6.5.0/gcc_64/bin:$PATH
+      run: |
+        echo "--- Running androiddeployqt ---"
         if ! command -v androiddeployqt &> /dev/null; then
             echo "ERROR: androiddeployqt command not found in PATH!"
-            echo "PATH=$PATH"
             exit 1
         fi
-
         mkdir -p build-android
-
         androiddeployqt \
           --input qt_for_python_android_deploy.json \
           --output build-android \
@@ -125,28 +84,12 @@ jobs:
           --gradle \
           --verbose
 
-        echo "--- androiddeployqt Finished ---"
-        ls -lR build-android
-
-
-    # Step 10: Build with Gradle
     - name: Build with Gradle
       working-directory: ./build-android
       run: |
-        echo "--- Building with Gradle ---"
         chmod +x ./gradlew
-
-        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-        echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
-        ./gradlew --version
-
         ./gradlew assembleDebug --info
 
-        echo "--- Gradle Build Finished ---"
-        echo "Listing generated APKs:"
-        find build/outputs/apk/debug/ -name "*.apk" -ls
-
-    # Step 11: Upload APK artifact
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
