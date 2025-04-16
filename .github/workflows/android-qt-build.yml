@@ -22,7 +22,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # ... (Steps up to Prepare Android Resources) ...
     - name: Check out code
       uses: actions/checkout@v4
 
@@ -77,11 +76,50 @@ jobs:
         python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
           --outputdir ${{ github.workspace }}/qt_host \
           --archives Tools Core Network Concurrent Widgets Gui Test Linguist
-        # *** ADDED DEBUGGING ***
-        echo "Listing host Qt bin directory contents:"
-        ls -la ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin/
-        echo "Checking specifically for androiddeployqt:"
-        ls -la ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin/androiddeployqt || echo "androiddeployqt not found immediately after install!"
+
+        # *** ENHANCED DEBUGGING: Check what was actually created ***
+        echo "--- Debugging Qt Host Installation ---"
+        echo "Exit code of aqt install: $?" # Check the exit code explicitly
+
+        HOST_QT_BASE_DIR="${{ github.workspace }}/qt_host"
+        echo "Listing contents of base output directory: $HOST_QT_BASE_DIR"
+        ls -la "$HOST_QT_BASE_DIR"
+
+        HOST_QT_VERSION_DIR="$HOST_QT_BASE_DIR/${{ env.QT_VERSION }}"
+        echo "Checking if version directory exists: $HOST_QT_VERSION_DIR"
+        if [ -d "$HOST_QT_VERSION_DIR" ]; then
+          echo "Listing contents of version directory:"
+          ls -la "$HOST_QT_VERSION_DIR"
+        else
+          echo "ERROR: Version directory '$HOST_QT_VERSION_DIR' was NOT created."
+          # Attempt listing base dir again
+          echo "Listing base dir '$HOST_QT_BASE_DIR' again:"
+          ls -la "$HOST_QT_BASE_DIR"
+          exit 1 # Fail the step explicitly if the expected dir is missing
+        fi
+
+        HOST_QT_ARCH_DIR="$HOST_QT_VERSION_DIR/gcc_64"
+        echo "Checking if arch directory exists: $HOST_QT_ARCH_DIR"
+        if [ -d "$HOST_QT_ARCH_DIR" ]; then
+          echo "Listing contents of arch directory:"
+          ls -la "$HOST_QT_ARCH_DIR"
+        else
+           echo "ERROR: Arch directory '$HOST_QT_ARCH_DIR' was NOT created."
+           exit 1 # Fail the step
+        fi
+
+        HOST_QT_BIN_DIR="$HOST_QT_ARCH_DIR/bin"
+        echo "Checking if bin directory exists: $HOST_QT_BIN_DIR"
+        if [ -d "$HOST_QT_BIN_DIR" ]; then
+          echo "Listing contents of bin directory:"
+          ls -la "$HOST_QT_BIN_DIR"
+          echo "Checking specifically for androiddeployqt:"
+          ls -la "$HOST_QT_BIN_DIR/androiddeployqt" || echo "WARNING: androiddeployqt executable not found in bin directory!"
+        else
+           echo "ERROR: Bin directory '$HOST_QT_BIN_DIR' was NOT created."
+           exit 1 # Fail the step
+        fi
+        echo "--- End Debugging Qt Host Installation ---"
 
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
@@ -90,7 +128,6 @@ jobs:
           --outputdir ${{ github.workspace }}/qt_target \
           --archives qtbase qt5compat
 
-    # ... (Steps for Android SDK setup, license acceptance, components install) ...
     - name: Install Android SDK Command-Line Tools
       run: |
         echo "Setting up Android SDK directories..."
@@ -143,10 +180,14 @@ jobs:
       run: |
         QT_HOST_BIN_DIR="${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
         echo "Adding Qt Host bin to GITHUB_PATH: $QT_HOST_BIN_DIR"
+        # Verify directory exists before adding to PATH
+        if [ ! -d "$QT_HOST_BIN_DIR" ]; then
+           echo "ERROR: Qt Host bin directory '$QT_HOST_BIN_DIR' not found! Cannot add to PATH."
+           exit 1
+        fi
         echo "$QT_HOST_BIN_DIR" >> $GITHUB_PATH
-        # *** ADDED DEBUGGING ***
         echo "Verifying androiddeployqt existence again in $QT_HOST_BIN_DIR:"
-        ls -la "$QT_HOST_BIN_DIR/androiddeployqt" || echo "androiddeployqt check failed in Add Path step!"
+        ls -la "$QT_HOST_BIN_DIR/androiddeployqt" || echo "WARNING: androiddeployqt check failed in Add Path step!"
 
     - name: Run androiddeployqt to Generate Gradle Project
       env:
@@ -156,29 +197,18 @@ jobs:
         echo "Using Qt Host Tools from PATH"
         echo "Using Qt Target Libs from: $Qt6_DIR"
         echo "Current PATH: $PATH"
-        # *** ADDED DEBUGGING ***
         QT_HOST_BIN_DIR_IN_STEP="${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
         echo "Verifying androiddeployqt existence one more time in $QT_HOST_BIN_DIR_IN_STEP:"
-        ls -la "$QT_HOST_BIN_DIR_IN_STEP/androiddeployqt" || echo "androiddeployqt check failed *inside* Run step!"
+        ls -la "$QT_HOST_BIN_DIR_IN_STEP/androiddeployqt" || echo "WARNING: androiddeployqt check failed *inside* Run step!"
         echo "Result of which androiddeployqt:"
         which androiddeployqt || echo "'which' command failed to find androiddeployqt"
         echo "Result of command -v androiddeployqt:"
         command -v androiddeployqt || echo "'command -v' failed to find androiddeployqt"
 
-        # Original check - keep it to see if it still fails
         if ! command -v androiddeployqt &> /dev/null; then
             echo "ERROR: androiddeployqt command not found! Check GITHUB_PATH step and file existence/permissions."
-            # Attempt to run with full path as a fallback test
-            echo "Attempting to run with full path: $QT_HOST_BIN_DIR_IN_STEP/androiddeployqt"
-            if [ -x "$QT_HOST_BIN_DIR_IN_STEP/androiddeployqt" ]; then
-               "$QT_HOST_BIN_DIR_IN_STEP/androiddeployqt" --help # Try running with full path
-               echo "Running with full path worked? Investigate PATH issue."
-            else
-               echo "File is not executable or doesn't exist at full path."
-            fi
             exit 1
         fi
-        which androiddeployqt # Verify it's found
 
         echo "Creating build directory: build-android"
         mkdir -p build-android
@@ -196,7 +226,6 @@ jobs:
         echo "Listing generated project structure:"
         ls -l build-android
 
-    # ... (Gradle Build and Upload Artifact steps) ...
     - name: Build APK with Gradle
       working-directory: ./build-android
       run: |
