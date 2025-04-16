@@ -1,0 +1,62 @@
+{
+    // --- Basic Application Identification ---
+    // Internal name, often matches the main script without extension
+    "application-binary": "main",
+    // Name shown to the user (from buildozer.spec title)
+    "application-display-name": "MolarMass",
+    // Android package ID (from buildozer.spec domain + name)
+    "application-package": "org.test.molarmass",
+    // Integer version code, increments with each release (must increase for Play Store updates)
+    "application-version-code": "2", // Starting with 2 since version name is 1.1
+    // User-visible version string (from buildozer.spec version)
+    "application-version-name": "1.1",
+
+    // --- Deployment Configuration ---
+    // Tells the tool to package Qt for Python (PySide6/Shiboken6)
+    "deploy-plugin": "PySide6",
+    // Directory for placing Android-specific files (like AndroidManifest.xml template, if needed)
+    // You might need to create this directory: ./src/
+    "android-package-source-directory": "src",
+    // Your main Python script file
+    "entry-point-script": "main.py",
+
+    // --- Python Dependencies ---
+    // List ONLY pure-python dependencies installable via pip.
+    // PySide6/Shiboken6 are handled automatically by the deploy-plugin.
+    "python-dependencies": [
+        "molmass"
+        // NOTE: 'kivy' and 'pillow' from buildozer.spec are NOT included here
+        // as they are not used in main.py and/or are not needed for PySide6 deployment.
+    ],
+
+    // --- Extra Python Modules ---
+    // List any local Python modules/packages in your source tree (relative paths)
+    // that are NOT installed via pip but need to be included.
+    "extra-modules": [], // Likely empty for your current app
+
+    // --- Android Specific Settings ---
+    "android-settings": {
+        // Minimum Android API level your app supports (e.g., 24 corresponds to Android 7.0)
+        "MIN_SDK_VERSION": "24", // Based on common practice, higher than buildozer.spec's 21
+        // Target Android API level (should be recent, e.g., 33 for Android 13, 34 for Android 14)
+        "TARGET_SDK_VERSION": "33", // A recent target
+        // Base name of the icon file (without extension).
+        // Your python script looks for 'chem_icon.png'
+        "APPLICATION_ICON": "chem_icon",
+        // Android permissions required by your application
+        "PERMISSIONS": [
+            // Add permissions if needed, e.g.:
+            // "android.permission.INTERNET",
+            // "android.permission.WRITE_EXTERNAL_STORAGE"
+        ] // Keep empty if no special permissions are needed
+    },
+
+    // --- Qt Modules ---
+    // List the essential Qt modules your PySide6 application uses.
+    // androiddeployqt uses this to include only necessary Qt libraries.
+    "qt-modules": [
+        "Core",
+        "Gui",
+        "Widgets"
+    ]
+}
