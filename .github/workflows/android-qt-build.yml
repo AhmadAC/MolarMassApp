@@ -5,6 +5,18 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  QT_VERSION: '6.5.0'
+  PY_VERSION: '3.11'
+  JAVA_VERSION: '17'
+  PYSIDE_VERSION: '6.5.0'
+  ANDROID_PLATFORM: 'android-33'
+  ANDROID_BUILD_TOOLS_VERSION: '33.0.2'
+  ANDROID_NDK_VERSION: '25.1.8937393'
+  ANDROID_CMDLINE_TOOLS_VERSION_URL: 'https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip'
+  ANDROID_HOME: ${{ github.workspace }}/android-sdk
+  ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+
 jobs:
   build-android-qt:
     runs-on: ubuntu-latest
@@ -13,129 +25,176 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
 
-    - name: Set up Java
+    - name: Set up Java JDK ${{ env.JAVA_VERSION }}
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: '17'
+        java-version: ${{ env.JAVA_VERSION }}
 
-    - name: Set up Python
+    - name: Set up Python ${{ env.PY_VERSION }}
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: ${{ env.PY_VERSION }}
 
-    - name: Install Python Dependencies
+    - name: Install Python Build Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyside6==6.5.0
-        pip install molmass aqtinstall beautifulsoup4 bs4 certifi charset-normalizer defusedxml humanize idna patch py7zr requests semantic-version soupsieve typing-extensions urllib3
+        pip install pyside6==${{ env.PYSIDE_VERSION }}
+        pip install aqtinstall
+        pip install molmass beautifulsoup4 bs4 certifi charset-normalizer defusedxml humanize idna patch py7zr requests semantic-version soupsieve typing-extensions urllib3
 
-    - name: Verify JSON config exists
+    - name: Verify and Validate JSON Config
       run: |
-        if [ ! -f qt_for_python_android_deploy.json ]; then
-          echo "ERROR: qt_for_python_android_deploy.json not found!"
+        JSON_CONFIG="qt_for_python_android_deploy.json"
+        if [ ! -f "$JSON_CONFIG" ]; then
+          echo "ERROR: $JSON_CONFIG not found in the repository root!"
           exit 1
         fi
-        echo "qt_for_python_android_deploy.json found."
-        cat qt_for_python_android_deploy.json
+        echo "$JSON_CONFIG found. Validating..."
+        python -m json.tool "$JSON_CONFIG" > /dev/null
+        echo "JSON config is valid."
+        echo "--- Contents of $JSON_CONFIG ---"
+        cat "$JSON_CONFIG"
+        echo "--- End of $JSON_CONFIG ---"
 
-    - name: Validate JSON Config
+    - name: Prepare Android Resources (e.g., Icon)
       run: |
-        if ! python -m json.tool qt_for_python_android_deploy.json; then
-          echo "ERROR: Invalid JSON format in qt_for_python_android_deploy.json!"
-          exit 1
-        fi
-        echo "JSON file is valid."
-
-    - name: Print JSON Config
-      run: |
-        echo "Contents of qt_for_python_android_deploy.json:"
-        cat qt_for_python_android_deploy.json
-
-    - name: Prepare Android Resources
-      run: |
-        mkdir -p src/res/drawable
-        if [ -f "data/icon.png" ]; then
-          cp data/icon.png src/res/drawable/icon.png
-          echo "Copied icon from data/icon.png to src/res/drawable/"
+        ANDROID_SRC_DIR="src"
+        mkdir -p "${ANDROID_SRC_DIR}/res/drawable"
+        ICON_SOURCE="data/icon.png"
+        ICON_DEST="${ANDROID_SRC_DIR}/res/drawable/icon.png"
+        if [ -f "$ICON_SOURCE" ]; then
+          cp "$ICON_SOURCE" "$ICON_DEST"
+          echo "Copied icon from '$ICON_SOURCE' to '$ICON_DEST'"
         else
-          echo "Warning: data/icon.png not found. App might lack an icon."
+          echo "Warning: Icon source '$ICON_SOURCE' not found. App might lack an icon or use a default."
         fi
 
-    - name: Install Qt for Desktop (Host Tools)
+    - name: Install Qt ${{ env.QT_VERSION }} for Desktop (Host Build Tools)
       run: |
-        python -m aqt install-qt linux desktop 6.5.0 gcc_64 --outputdir ${{ github.workspace }}/qt_host/Qt
+        echo "Installing Qt Host tools (Desktop Linux gcc_64)..."
+        python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
+          --outputdir ${{ github.workspace }}/qt_host \
+          --archives Tools Core Network Concurrent Widgets Gui Test Linguist \
+          --noarchives
 
-    - name: Install Qt for Android (Target Libraries)
+    - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
-        python -m aqt install-qt linux android 6.5.0 android_arm64_v8a --outputdir ${{ github.workspace }}/qt_target/Qt
+        echo "Installing Qt Target libraries (Android arm64_v8a)..."
+        python -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
+          --outputdir ${{ github.workspace }}/qt_target \
+          --modules Qt5Compat Core Network Concurrent Widgets Gui \
+          --noarchives
 
-    - name: Install Android Command-Line Tools
+    - name: Install Android SDK Command-Line Tools
       run: |
+        echo "Setting up Android SDK directories..."
         mkdir -p $ANDROID_HOME/cmdline-tools
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
+        echo "Downloading command-line tools..."
+        wget -q ${{ env.ANDROID_CMDLINE_TOOLS_VERSION_URL }} -O cmdline-tools.zip
+        echo "Extracting command-line tools..."
         unzip -q cmdline-tools.zip -d $ANDROID_HOME/cmdline-tools
         mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+        rm cmdline-tools.zip
+        echo "Android command-line tools installed to $ANDROID_HOME/cmdline-tools/latest"
+        echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+        echo "SDK tool paths added to GITHUB_PATH"
 
     - name: Accept Android SDK Licenses
       run: |
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+        echo "Accepting Android SDK licenses..."
+        yes | sdkmanager --licenses
+        echo "Licenses accepted."
 
-    - name: Install Android SDK components manually
+    - name: Install Android SDK Components (Platform, Build Tools, NDK)
       run: |
         echo "Installing Android SDK components..."
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;25.1.8937393"
+        yes | sdkmanager --install "platform-tools" \
+                                   "platforms;${{ env.ANDROID_PLATFORM }}" \
+                                   "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}" \
+                                   "ndk;${{ env.ANDROID_NDK_VERSION }}"
         echo "Android SDK components installed."
+        NDK_PATH="$ANDROID_SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}"
+        echo "Setting ANDROID_NDK_ROOT=$NDK_PATH"
+        echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
 
-    - name: Validate Android SDK installation
+    - name: Validate Android Environment
       run: |
-        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-        echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
-        echo "PATH=$PATH"
-
-        if [ -z "$ANDROID_SDK_ROOT" ]; then
-          echo "ERROR: ANDROID_SDK_ROOT is not set!"
+        echo "--- Android Environment Validation ---"
+        echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+        if [ -z "$ANDROID_SDK_ROOT" ] || [ ! -d "$ANDROID_SDK_ROOT" ]; then
+          echo "ERROR: ANDROID_SDK_ROOT is not set or directory does not exist!"
           exit 1
         fi
-
-        if [ -z "$ANDROID_NDK_ROOT" ]; then
-          echo "ERROR: ANDROID_NDK_ROOT is not set!"
-          exit 1
-        fi
-
         ls -l $ANDROID_SDK_ROOT
+
+        echo "ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
+        if [ -z "$ANDROID_NDK_ROOT" ] || [ ! -d "$ANDROID_NDK_ROOT" ]; then
+          echo "ERROR: ANDROID_NDK_ROOT is not set or directory does not exist!"
+          ls -l $ANDROID_SDK_ROOT/ndk/ || echo "NDK directory listing failed."
+          exit 1
+        fi
         ls -l $ANDROID_NDK_ROOT
 
-    - name: Debug PATH
-      run: |
-        echo "PATH=$PATH"
-        which mkdir || echo "mkdir not found!"
+        echo "Checking key tools in PATH:"
+        which sdkmanager
+        which adb || echo "adb (platform-tools) not found in PATH yet (expected if not installed or PATH not updated)"
+        which ndk-build || echo "ndk-build not found in PATH (expected)"
+        java -version
+        echo "PATH: $PATH"
+        echo "--- Validation Complete ---"
 
-    - name: Run androiddeployqt
+
+    - name: Run androiddeployqt to Generate Gradle Project
       env:
-        Qt6_DIR: ${{ github.workspace }}/qt_target/Qt/6.5.0/android_arm64_v8a
-        PATH: /usr/bin:/bin:${{ github.workspace }}/qt_host/Qt/6.5.0/gcc_64/bin:$PATH
+        Qt6_DIR: ${{ github.workspace }}/qt_target/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
+        PATH: ${{ github.workspace }}/qt_host/Qt/${{ env.QT_VERSION }}/gcc_64/bin:$PATH
       run: |
         echo "--- Running androiddeployqt ---"
+        echo "Using Qt Host Tools from: ${{ github.workspace }}/qt_host/Qt/${{ env.QT_VERSION }}/gcc_64/bin"
+        echo "Using Qt Target Libs from: $Qt6_DIR"
+        echo "PATH: $PATH"
+
         if ! command -v androiddeployqt &> /dev/null; then
-            echo "ERROR: androiddeployqt command not found in PATH!"
+            echo "ERROR: androiddeployqt command not found!"
+            echo "Ensure host Qt bin directory is correctly added to PATH."
             exit 1
         fi
+
+        echo "Creating build directory: build-android"
         mkdir -p build-android
+
+        echo "Executing androiddeployqt..."
         androiddeployqt \
           --input qt_for_python_android_deploy.json \
           --output build-android \
-          --android-platform android-33 \
+          --android-platform ${{ env.ANDROID_PLATFORM }} \
+          --jdk "$JAVA_HOME" \
           --gradle \
           --verbose
 
-    - name: Build with Gradle
+        echo "--- androiddeployqt finished ---"
+        echo "Listing generated project structure:"
+        ls -l build-android
+
+    - name: Build APK with Gradle
       working-directory: ./build-android
       run: |
+        echo "--- Building Android Project with Gradle ---"
+        echo "Current directory: $(pwd)"
+        if [ ! -f "./gradlew" ]; then
+           echo "ERROR: gradlew script not found in $(pwd). androiddeployqt might have failed."
+           exit 1
+        fi
+        echo "Making gradlew executable..."
         chmod +x ./gradlew
-        ./gradlew assembleDebug --info
 
-    - name: Upload APK artifact
+        echo "Running Gradle build (assembleDebug)..."
+        ./gradlew assembleDebug --info
+        echo "--- Gradle build finished ---"
+
+    - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: MolarMass-Android-Debug-APK
