@@ -74,6 +74,7 @@ jobs:
       run: |
         echo "Installing Qt Host tools (Desktop Linux gcc_64)..."
         python -m aqt install-qt linux desktop 6.5.0 gcc_64 \
+        python -m aqt list-qt linux desktop --modules 6.5.0 <arch> \
           --outputdir ${{ github.workspace }}/qt_host \
           --archives Tools Core Network Concurrent Widgets Gui Test Linguist
           # Removed --noarchives
