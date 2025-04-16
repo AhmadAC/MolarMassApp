@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
 
 env:
-  QT_VERSION: '6.5.0' # Using Qt version 6.5.0 as requested
+  QT_VERSION: '6.5.0'
   PY_VERSION: '3.11'
   JAVA_VERSION: '17'
-  PYSIDE_VERSION: '6.5.0' # Ensure this matches QT_VERSION if needed
+  PYSIDE_VERSION: '6.5.0'
   ANDROID_PLATFORM: 'android-33'
   ANDROID_BUILD_TOOLS_VERSION: '33.0.2'
   ANDROID_NDK_VERSION: '25.1.8937393'
@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # ... (Keep all steps from Checkout up to Validate Android Environment) ...
+
     - name: Check out code
       uses: actions/checkout@v4
 
@@ -73,7 +75,6 @@ jobs:
     - name: Install Qt ${{ env.QT_VERSION }} for Desktop (Host Build Tools)
       run: |
         echo "Installing Qt Host tools (Desktop Linux gcc_64)..."
-        # Install host tools (like androiddeployqt) needed to build the package
         python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
           --outputdir ${{ github.workspace }}/qt_host \
           --archives Tools Core Network Concurrent Widgets Gui Test Linguist
@@ -81,9 +82,6 @@ jobs:
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
         echo "Installing Qt Target libraries (Android arm64_v8a)..."
-        # Install Android target libraries using --archives
-        # qtbase contains Core, Gui, Widgets, Network, Concurrent
-        # qt5compat contains Qt5Compat module
         python -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
           --outputdir ${{ github.workspace }}/qt_target \
           --archives qtbase qt5compat
@@ -141,29 +139,34 @@ jobs:
 
         echo "Checking key tools in PATH:"
         which sdkmanager
-        which adb || echo "adb (platform-tools) not found in PATH yet (expected if not installed or PATH not updated)"
+        which adb || echo "adb (platform-tools) not found in PATH yet" # Updated message slightly
         which ndk-build || echo "ndk-build not found in PATH (expected)"
         java -version
-        echo "PATH: $PATH"
+        echo "Current PATH (before adding Qt Host): $PATH" # Log PATH before the next step
         echo "--- Validation Complete ---"
+
+    # ***** ADD THIS NEW STEP *****
+    - name: Add Qt Host Tools to PATH
+      run: |
+        echo "Adding Qt Host bin to GITHUB_PATH: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
+        echo "${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin" >> $GITHUB_PATH
 
     - name: Run androiddeployqt to Generate Gradle Project
       env:
-        # Path to the Android target Qt installation
+        # Only need Qt6_DIR here now, PATH is handled by GITHUB_PATH
         Qt6_DIR: ${{ github.workspace }}/qt_target/${{ env.QT_VERSION }}/android_arm64_v8a
-        # Add the host Qt tools directory to the PATH
-        PATH: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin:$PATH
       run: |
         echo "--- Running androiddeployqt ---"
-        echo "Using Qt Host Tools from: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
+        echo "Using Qt Host Tools from PATH" # Updated message
         echo "Using Qt Target Libs from: $Qt6_DIR"
-        echo "PATH: $PATH"
+        echo "Current PATH: $PATH" # Log the PATH *inside* the step to verify
 
+        # This check should now pass because the path was added via GITHUB_PATH
         if ! command -v androiddeployqt &> /dev/null; then
-            echo "ERROR: androiddeployqt command not found!"
-            echo "Ensure host Qt bin directory ('${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin') is correctly added to PATH."
+            echo "ERROR: androiddeployqt command not found! Check GITHUB_PATH step."
             exit 1
         fi
+        which androiddeployqt # Verify it's found
 
         echo "Creating build directory: build-android"
         mkdir -p build-android
@@ -194,7 +197,6 @@ jobs:
         chmod +x ./gradlew
 
         echo "Running Gradle build (assembleDebug)..."
-        # Use --info for more detailed Gradle output
         ./gradlew assembleDebug --info
         echo "--- Gradle build finished ---"
 
