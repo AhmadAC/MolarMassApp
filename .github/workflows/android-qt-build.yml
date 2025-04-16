@@ -82,7 +82,7 @@ jobs:
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
         echo "Installing Qt Target libraries (Android arm64_v8a)..."
-        python -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
+        python -m aqt install-qt linux desktop 6.5.0 gcc_64 \
           --outputdir ${{ github.workspace }}/qt_target \
           --modules Qt5Compat Core Network Concurrent Widgets Gui
           # Removed --noarchives
