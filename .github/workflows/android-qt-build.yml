@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
 
 env:
-  QT_VERSION: '6.5.0' # This variable is used below
+  QT_VERSION: '6.5.0' # Using Qt version 6.5.0 as requested
   PY_VERSION: '3.11'
   JAVA_VERSION: '17'
-  PYSIDE_VERSION: '6.5.0'
+  PYSIDE_VERSION: '6.5.0' # Ensure this matches QT_VERSION if needed
   ANDROID_PLATFORM: 'android-33'
   ANDROID_BUILD_TOOLS_VERSION: '33.0.2'
   ANDROID_NDK_VERSION: '25.1.8937393'
@@ -70,23 +70,23 @@ jobs:
           echo "Warning: Icon source '$ICON_SOURCE' not found. App might lack an icon or use a default."
         fi
 
-    # This is the step you highlighted - it installs host tools and is NOT removed
     - name: Install Qt ${{ env.QT_VERSION }} for Desktop (Host Build Tools)
       run: |
         echo "Installing Qt Host tools (Desktop Linux gcc_64)..."
-        # This command uses env.QT_VERSION which is '6.5.0'
+        # Install host tools (like androiddeployqt) needed to build the package
         python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
           --outputdir ${{ github.workspace }}/qt_host \
           --archives Tools Core Network Concurrent Widgets Gui Test Linguist
-          # Removed --noarchives as it caused the error
 
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
         echo "Installing Qt Target libraries (Android arm64_v8a)..."
+        # Install Android target libraries using --archives
+        # qtbase contains Core, Gui, Widgets, Network, Concurrent
+        # qt5compat contains Qt5Compat module
         python -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
           --outputdir ${{ github.workspace }}/qt_target \
-          --modules Qt5Compat Core Network Concurrent Widgets Gui
-          # Removed --noarchives
+          --archives qtbase qt5compat
 
     - name: Install Android SDK Command-Line Tools
       run: |
@@ -149,7 +149,9 @@ jobs:
 
     - name: Run androiddeployqt to Generate Gradle Project
       env:
+        # Path to the Android target Qt installation
         Qt6_DIR: ${{ github.workspace }}/qt_target/${{ env.QT_VERSION }}/android_arm64_v8a
+        # Add the host Qt tools directory to the PATH
         PATH: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin:$PATH
       run: |
         echo "--- Running androiddeployqt ---"
@@ -192,6 +194,7 @@ jobs:
         chmod +x ./gradlew
 
         echo "Running Gradle build (assembleDebug)..."
+        # Use --info for more detailed Gradle output
         ./gradlew assembleDebug --info
         echo "--- Gradle build finished ---"
 
