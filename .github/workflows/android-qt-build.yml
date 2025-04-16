@@ -22,8 +22,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # ... (Keep all steps from Checkout up to Validate Android Environment) ...
-
     - name: Check out code
       uses: actions/checkout@v4
 
@@ -43,7 +41,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyside6==${{ env.PYSIDE_VERSION }}
         pip install aqtinstall
+        # Ensure all your app's Python dependencies are listed here
         pip install molmass beautifulsoup4 bs4 certifi charset-normalizer defusedxml humanize idna patch py7zr requests semantic-version soupsieve typing-extensions urllib3
+
     - name: Verify and Validate JSON Config
       run: |
         JSON_CONFIG="qt_for_python_android_deploy.json"
@@ -57,30 +57,37 @@ jobs:
         echo "--- Contents of $JSON_CONFIG ---"
         cat "$JSON_CONFIG"
         echo "--- End of $JSON_CONFIG ---"
+
     - name: Prepare Android Resources (e.g., Icon)
       run: |
-        ANDROID_SRC_DIR="src"
+        ANDROID_SRC_DIR="src" # This dir is used by androiddeployqt based on json config potentially
         mkdir -p "${ANDROID_SRC_DIR}/res/drawable"
-        ICON_SOURCE="data/icon.png"
+        ICON_SOURCE="data/icon.png" # Adjust path if your icon is elsewhere
         ICON_DEST="${ANDROID_SRC_DIR}/res/drawable/icon.png"
         if [ -f "$ICON_SOURCE" ]; then
           cp "$ICON_SOURCE" "$ICON_DEST"
           echo "Copied icon from '$ICON_SOURCE' to '$ICON_DEST'"
         else
+          # Consider adding a default placeholder icon here if needed
           echo "Warning: Icon source '$ICON_SOURCE' not found. App might lack an icon or use a default."
         fi
+
     - name: Install Qt ${{ env.QT_VERSION }} for Desktop (Host Build Tools)
       run: |
         echo "Installing Qt Host tools (Desktop Linux gcc_64)..."
         python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
           --outputdir ${{ github.workspace }}/qt_host \
-          --archives Tools Core Network Concurrent Widgets Gui Test Linguist
+          --archives Tools Core Network Concurrent Widgets Gui Test Linguist # Ensure 'Tools' is included
+        # Verify androiddeployqt exists after installation
+        ls -l ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin/androiddeployqt
+
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
         echo "Installing Qt Target libraries (Android arm64_v8a)..."
         python -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
           --outputdir ${{ github.workspace }}/qt_target \
-          --archives qtbase qt5compat
+          --archives qtbase qt5compat # Add other Qt modules if your app needs them
+
     - name: Install Android SDK Command-Line Tools
       run: |
         echo "Setting up Android SDK directories..."
@@ -89,28 +96,44 @@ jobs:
         wget -q ${{ env.ANDROID_CMDLINE_TOOLS_VERSION_URL }} -O cmdline-tools.zip
         echo "Extracting command-line tools..."
         unzip -q cmdline-tools.zip -d $ANDROID_HOME/cmdline-tools
+        # The extracted folder is often 'cmdline-tools'. Ensure it becomes 'latest'.
         mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
         rm cmdline-tools.zip
         echo "Android command-line tools installed to $ANDROID_HOME/cmdline-tools/latest"
         echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
-        echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+        echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH # Add platform-tools path early
         echo "SDK tool paths added to GITHUB_PATH"
+
     - name: Accept Android SDK Licenses
+      # Ensure sdkmanager is available from the previous step's GITHUB_PATH modification
       run: |
         echo "Accepting Android SDK licenses..."
+        # Sometimes sdkmanager isn't immediately available, add a small delay or loop
+        for i in 1 2 3; do which sdkmanager && break || sleep 5; done
+        if ! which sdkmanager; then echo "ERROR: sdkmanager not found in PATH"; exit 1; fi
         yes | sdkmanager --licenses
         echo "Licenses accepted."
+
     - name: Install Android SDK Components (Platform, Build Tools, NDK)
       run: |
         echo "Installing Android SDK components..."
-        yes | sdkmanager --install "platform-tools" \
-                                   "platforms;${{ env.ANDROID_PLATFORM }}" \
+        # Install platform-tools first as sdkmanager might use adb internally for some operations
+        yes | sdkmanager --install "platform-tools"
+        # Now install the rest
+        yes | sdkmanager --install "platforms;${{ env.ANDROID_PLATFORM }}" \
                                    "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}" \
                                    "ndk;${{ env.ANDROID_NDK_VERSION }}"
         echo "Android SDK components installed."
         NDK_PATH="$ANDROID_SDK_ROOT/ndk/${{ env.ANDROID_NDK_VERSION }}"
+        echo "Verifying NDK installation at $NDK_PATH"
+        if [ ! -d "$NDK_PATH" ]; then
+           echo "ERROR: NDK directory not found after install: $NDK_PATH"
+           ls -l $ANDROID_SDK_ROOT/ndk/
+           exit 1
+        fi
         echo "Setting ANDROID_NDK_ROOT=$NDK_PATH"
         echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
+
     - name: Validate Android Environment
       run: |
         echo "--- Android Environment Validation ---"
@@ -122,40 +145,62 @@ jobs:
         ls -l $ANDROID_SDK_ROOT
         echo "ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
         if [ -z "$ANDROID_NDK_ROOT" ] || [ ! -d "$ANDROID_NDK_ROOT" ]; then
-          echo "ERROR: ANDROID_NDK_ROOT is not set or directory does not exist!"
+          echo "ERROR: ANDROID_NDK_ROOT env var is not set or directory does not exist!"
           ls -l $ANDROID_SDK_ROOT/ndk/ || echo "NDK directory listing failed."
           exit 1
         fi
         ls -l $ANDROID_NDK_ROOT
         echo "Checking key tools in PATH:"
         which sdkmanager
-        which adb || echo "adb (platform-tools) not found in PATH yet" # Updated message slightly
-        which ndk-build || echo "ndk-build not found in PATH (expected)"
+        which adb # Should be found now as platform-tools were installed and added to PATH
+        which ndk-build || echo "ndk-build not found in PATH (usually expected, NDK_ROOT is used)"
         java -version
-        echo "Current PATH (before adding Qt Host): $PATH" # Log PATH before the next step
+        echo "Current PATH (before adding Qt Host): $PATH" # Log PATH before the next step adds Qt Host
         echo "--- Validation Complete ---"
-    # ***** ADD THIS NEW STEP *****
+
     - name: Add Qt Host Tools to PATH
       run: |
-        echo "Adding Qt Host bin to GITHUB_PATH: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
-        echo "${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin" >> $GITHUB_PATH
-    - name: Run androiddeployqt to Generate Gradle Project
-      env:
-        # Only need Qt6_DIR here now, PATH is handled by GITHUB_PATH
-        Qt6_DIR: ${{ github.workspace }}/qt_target/${{ env.QT_VERSION }}/android_arm64_v8a
-      run: |
-        echo "--- Running androiddeployqt ---"
-        echo "Using Qt Host Tools from PATH" # Updated message
-        echo "Using Qt Target Libs from: $Qt6_DIR"
-        echo "Current PATH: $PATH" # Log the PATH *inside* the step to verify
-        # This check should now pass because the path was added via GITHUB_PATH
-        if ! command -v androiddeployqt &> /dev/null; then
-            echo "ERROR: androiddeployqt command not found! Check GITHUB_PATH step."
+        QT_HOST_BIN_PATH="${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
+        echo "Adding Qt Host bin to GITHUB_PATH: $QT_HOST_BIN_PATH"
+        if [ ! -d "$QT_HOST_BIN_PATH" ]; then
+           echo "ERROR: Qt Host bin directory does not exist: $QT_HOST_BIN_PATH"
+           # List parent directory to debug installation issues
+           ls -l "${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/" || echo "Failed to list parent dir."
+           exit 1
+        fi
+        if [ ! -f "$QT_HOST_BIN_PATH/androiddeployqt" ]; then
+            echo "ERROR: androiddeployqt executable not found in $QT_HOST_BIN_PATH"
+            ls -l "$QT_HOST_BIN_PATH" || echo "Failed to list Qt Host bin dir."
             exit 1
         fi
-        which androiddeployqt # Verify it's found
+        echo "$QT_HOST_BIN_PATH" >> $GITHUB_PATH
+        echo "Qt Host bin path added."
+
+    - name: Run androiddeployqt to Generate Gradle Project
+      env:
+        # PATH is handled by GITHUB_PATH modifications in previous steps
+        Qt6_DIR: ${{ github.workspace }}/qt_target/${{ env.QT_VERSION }}/android_arm64_v8a
+        # ANDROID_NDK_ROOT is needed by androiddeployqt
+        ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_ROOT }} # Ensure it's passed from GITHUB_ENV
+      run: |
+        echo "--- Running androiddeployqt ---"
+        echo "Using Qt Host Tools from PATH"
+        echo "Using Qt Target Libs from: $Qt6_DIR"
+        echo "Using NDK from: $ANDROID_NDK_ROOT"
+        echo "Current PATH: $PATH" # Log the PATH *inside* the step to verify Qt and SDK paths are present
+
+        # Explicitly check if the command is now findable
+        if ! command -v androiddeployqt &> /dev/null; then
+            echo "ERROR: androiddeployqt command not found even after adding path! Check GITHUB_PATH step and Qt Host installation."
+            echo "Listing contents of expected Qt Host bin directory:"
+            ls -l "${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin" || echo "Failed to list directory."
+            exit 1
+        fi
+        echo "androiddeployqt found at: $(which androiddeployqt)"
+
         echo "Creating build directory: build-android"
         mkdir -p build-android
+
         echo "Executing androiddeployqt..."
         androiddeployqt \
           --input qt_for_python_android_deploy.json \
@@ -164,9 +209,13 @@ jobs:
           --jdk "$JAVA_HOME" \
           --gradle \
           --verbose
+        # Add --android-ndk-root "$ANDROID_NDK_ROOT" if it still complains about NDK,
+        # though setting ANDROID_NDK_ROOT env var should usually be sufficient.
+
         echo "--- androiddeployqt finished ---"
         echo "Listing generated project structure:"
-        ls -l build-android
+        ls -lR build-android # Use -R for recursive listing to see deeper structure
+
     - name: Build APK with Gradle
       working-directory: ./build-android
       run: |
@@ -174,16 +223,26 @@ jobs:
         echo "Current directory: $(pwd)"
         if [ ! -f "./gradlew" ]; then
            echo "ERROR: gradlew script not found in $(pwd). androiddeployqt might have failed."
+           # Add more diagnostics if gradlew is missing
+           echo "Listing directory contents:"
+           ls -lA # Show hidden files too
+           echo "Checking parent directory for build-android:"
+           ls -lA ..
            exit 1
         fi
         echo "Making gradlew executable..."
         chmod +x ./gradlew
         echo "Running Gradle build (assembleDebug)..."
+        # Add --stacktrace or --debug for more Gradle output if needed
         ./gradlew assembleDebug --info
         echo "--- Gradle build finished ---"
+        echo "Listing contents of build/outputs/apk/debug:"
+        ls -lA build/outputs/apk/debug/
+
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: MolarMass-Android-Debug-APK
+        # Use wildcard to match the potentially variable APK name
         path: ./build-android/build/outputs/apk/debug/*.apk
-        if-no-files-found: error
+        if-no-files-found: error # Keep this, it's good practice
