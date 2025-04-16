@@ -37,16 +37,19 @@ version = 1.1
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3==3.7.6,hostpython3==3.7.6,kivy,pillow,molmass
+# Removed specific python versions to let buildozer/p4a choose compatible ones
+requirements = python3,kivy,pillow,molmass
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
 # requirements.source.kivy = ../../kivy
 
 # (str) Presplash of the application
+# IMPORTANT: Make sure the file data/presplash.png exists relative to this spec file
 presplash.filename = %(source.dir)s/data/presplash.png
 
 # (str) Icon of the application
+# IMPORTANT: Make sure the file data/icon.png exists relative to this spec file
 icon.filename = %(source.dir)s/data/icon.png
 
 # (list) Supported orientations
@@ -57,17 +60,18 @@ orientation = portrait
 #services = NAME:ENTRYPOINT_TO_PY,NAME2:ENTRYPOINT2_TO_PY
 
 #
-# OSX Specific
+# OSX Specific - Commented out version pinning as it's not directly relevant to Android build
+# and might cause confusion if versions mismatch p4a's expectations
 #
 
 #
 # author = © Copyright Info
 
 # change the major version of python used by the app
-osx.python_version = 3.7.6
+# osx.python_version = 3.7.6
 
 # Kivy version to use
-osx.kivy_version = 1.9.1
+# osx.kivy_version = 1.9.1
 
 #
 # Android specific
@@ -94,38 +98,48 @@ fullscreen = 0
 #icon.adaptive_background.filename = %(source.dir)s/data/icon_bg.png
 
 # (list) Permissions
+# Needs INTERNET if you use web requests, etc. Add permissions as needed.
+# Example: android.permissions = android.permission.INTERNET
 # (See https://python-for-android.readthedocs.io/en/latest/buildoptions/#build-options-1 for all the supported syntaxes and properties)
-#android.permissions = android.permission.INTERNET, (name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=18)
+#android.permissions = android.permission.INTERNET
 
 # (list) features (adds uses-feature -tags to manifest)
 #android.features = android.hardware.usb.host
 
 # (int) Target Android API, should be as high as possible.
+# Buildozer defaults usually work well, uncomment to override.
 #android.api = 31
 
 # (int) Minimum API your APK / AAB will support.
+# Buildozer defaults usually work well, uncomment to override.
 #android.minapi = 21
 
 # (int) Android SDK version to use
+# Let buildozer manage this unless you have a specific reason.
 #android.sdk = 20
 
 # (str) Android NDK version to use
-#android.ndk = 23b
+# Let buildozer manage this unless you have a specific reason.
+#android.ndk = 23b # Example, often better left commented
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
+# Let buildozer manage this unless you have a specific reason.
 #android.ndk_api = 21
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
 #android.private_storage = True
 
 # (str) Android NDK directory (if empty, it will be automatically downloaded.)
-android.ndk_path = /usr/local/lib/android/ndk
+# LEAVE THIS COMMENTED OUT unless you have a specific, existing NDK setup you *must* use.
+# android.ndk_path = /path/to/my/ndk
 
 # (str) Android SDK directory (if empty, it will be automatically downloaded.)
-android.sdk_path = /usr/local/lib/android/sdk
+# LEAVE THIS COMMENTED OUT unless you have a specific, existing SDK setup you *must* use.
+# android.sdk_path = /path/to/my/sdk
 
 # (str) ANT directory (if empty, it will be automatically downloaded.)
-android.ant_path = /usr/local/lib/android/ant
+# LEAVE THIS COMMENTED OUT. Ant is often not needed with modern Gradle builds.
+# android.ant_path = /path/to/my/ant
 
 # (bool) If True, then skip trying to update the Android sdk
 # This can be useful to avoid excess Internet downloads or save time
@@ -135,8 +149,8 @@ android.ant_path = /usr/local/lib/android/ant
 # (bool) If True, then automatically accept SDK license
 # agreements. This is intended for automation only. If set to False,
 # the default, you will be shown the license when first running
-# buildozer.
-# android.accept_sdk_license = False
+# buildozer. Might be needed for CI like GitHub Actions.
+android.accept_sdk_license = True # Set to True for CI environments
 
 # (str) Android entry point, default is ok for Kivy-based app
 #android.entrypoint = org.kivy.android.PythonActivity
@@ -186,7 +200,8 @@ android.ant_path = /usr/local/lib/android/ant
 # Either form may be used, and assets need not be in 'source.include_exts'.
 # 1) android.add_assets = source_asset_relative_path
 # 2) android.add_assets = source_asset_path:destination_asset_relative_path
-#android.add_assets =
+# Example: If you have assets in an 'assets' folder:
+# android.add_assets = assets
 
 # (list) Put these files or directories in the apk res directory.
 # The option may be used in three ways, the value may contain one or zero ':'
@@ -195,7 +210,7 @@ android.ant_path = /usr/local/lib/android/ant
 # android.add_resources = my_icons/all-inclusive.png:drawable/all_inclusive.png
 # 2) A directory, here  'legal_icons' must contain resources of one kind
 # android.add_resources = legal_icons:drawable
-# 3) A directory, here 'legal_resources' must contain one or more directories, 
+# 3) A directory, here 'legal_resources' must contain one or more directories,
 # each of a resource kind:  drawable, xml, etc...
 # android.add_resources = legal_resources
 #android.add_resources =
@@ -206,7 +221,8 @@ android.ant_path = /usr/local/lib/android/ant
 # (bool) Enable AndroidX support. Enable when 'android.gradle_dependencies'
 # contains an 'androidx' package, or any package from Kotlin source.
 # android.enable_androidx requires android.api >= 28
-#android.enable_androidx = True
+# Set this to True if you use libraries requiring androidx (common now)
+android.enable_androidx = True
 
 # (list) add java compile options
 # this can for example be necessary when importing certain java libraries using the 'android.gradle_dependencies' option
@@ -214,14 +230,14 @@ android.ant_path = /usr/local/lib/android/ant
 # android.add_compile_options = "sourceCompatibility = 1.8", "targetCompatibility = 1.8"
 
 # (list) Gradle repositories to add {can be necessary for some android.gradle_dependencies}
-# please enclose in double quotes 
+# please enclose in double quotes
 # e.g. android.gradle_repositories = "maven { url 'https://kotlin.bintray.com/ktor' }"
 #android.add_gradle_repositories =
 
-# (list) packaging options to add 
+# (list) packaging options to add
 # see https://google.github.io/android-gradle-dsl/current/com.android.build.gradle.internal.dsl.PackagingOptions.html
 # can be necessary to solve conflicts in gradle_dependencies
-# please enclose in double quotes 
+# please enclose in double quotes
 # e.g. android.add_packaging_options = "exclude 'META-INF/common.kotlin_module'", "exclude 'META-INF/*.kotlin_module'"
 #android.add_packaging_options =
 
@@ -246,7 +262,8 @@ android.ant_path = /usr/local/lib/android/ant
 
 # (str) screenOrientation to set for the main activity.
 # Valid values can be found at https://developer.android.com/guide/topics/manifest/activity-element
-#android.manifest.orientation = fullSensor
+# Can be useful to uncomment and set to 'portrait' if your app is portrait only
+# android.manifest.orientation = portrait
 
 # (list) Android additional libraries to copy into libs/armeabi
 #android.add_libs_armeabi = libs/android/*.so
@@ -270,7 +287,7 @@ android.ant_path = /usr/local/lib/android/ant
 #android.uses_library =
 
 # (str) Android logcat filters to use
-#android.logcat_filters = *:S python:D
+android.logcat_filters = *:S python:D
 
 # (bool) Android logcat only display log for activity's pid
 #android.logcat_pid_only = False
@@ -282,7 +299,7 @@ android.ant_path = /usr/local/lib/android/ant
 #android.copy_libs = 1
 
 # (list) The Android archs to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
-# In past, was `android.arch` as we weren't supporting builds for multiple archs at the same time.
+# Building for both 32 and 64 bit ARM is common.
 android.archs = arm64-v8a, armeabi-v7a
 
 # (int) overrides automatic versionCode computation (used in build.gradle)
@@ -305,9 +322,11 @@ android.allow_backup = True
 # android.no-byte-compile-python = False
 
 # (str) The format used to package the app for release mode (aab or apk or aar).
+# Default is 'aab' which is required for Google Play. 'apk' is useful for direct installs/testing.
 # android.release_artifact = aab
 
 # (str) The format used to package the app for debug mode (apk or aar).
+# Default is 'apk'
 # android.debug_artifact = apk
 
 #
@@ -336,6 +355,7 @@ android.allow_backup = True
 #p4a.hook =
 
 # (str) Bootstrap to use for android builds
+# Default is usually sdl2, which is fine for Kivy. Uncomment to override.
 # p4a.bootstrap = sdl2
 
 # (int) port number to specify an explicit --port= p4a argument (eg for bootstrap flask)
@@ -354,7 +374,7 @@ android.allow_backup = True
 
 
 #
-# iOS specific
+# iOS specific - These settings are ignored for Android builds
 #
 
 # (str) Path to a custom kivy-ios folder
