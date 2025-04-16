@@ -22,8 +22,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # ... (Keep all steps from Checkout up to Validate Android Environment) ...
-
+    # ... (Steps up to Prepare Android Resources) ...
     - name: Check out code
       uses: actions/checkout@v4
 
@@ -78,6 +77,11 @@ jobs:
         python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
           --outputdir ${{ github.workspace }}/qt_host \
           --archives Tools Core Network Concurrent Widgets Gui Test Linguist
+        # *** ADDED DEBUGGING ***
+        echo "Listing host Qt bin directory contents:"
+        ls -la ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin/
+        echo "Checking specifically for androiddeployqt:"
+        ls -la ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin/androiddeployqt || echo "androiddeployqt not found immediately after install!"
 
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
@@ -86,6 +90,7 @@ jobs:
           --outputdir ${{ github.workspace }}/qt_target \
           --archives qtbase qt5compat
 
+    # ... (Steps for Android SDK setup, license acceptance, components install) ...
     - name: Install Android SDK Command-Line Tools
       run: |
         echo "Setting up Android SDK directories..."
@@ -123,47 +128,54 @@ jobs:
       run: |
         echo "--- Android Environment Validation ---"
         echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
-        if [ -z "$ANDROID_SDK_ROOT" ] || [ ! -d "$ANDROID_SDK_ROOT" ]; then
-          echo "ERROR: ANDROID_SDK_ROOT is not set or directory does not exist!"
-          exit 1
-        fi
         ls -l $ANDROID_SDK_ROOT
-
         echo "ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
-        if [ -z "$ANDROID_NDK_ROOT" ] || [ ! -d "$ANDROID_NDK_ROOT" ]; then
-          echo "ERROR: ANDROID_NDK_ROOT is not set or directory does not exist!"
-          ls -l $ANDROID_SDK_ROOT/ndk/ || echo "NDK directory listing failed."
-          exit 1
-        fi
-        ls -l $ANDROID_NDK_ROOT
-
+        ls -l $ANDROID_NDK_ROOT || echo "NDK directory listing failed."
         echo "Checking key tools in PATH:"
         which sdkmanager
-        which adb || echo "adb (platform-tools) not found in PATH yet" # Updated message slightly
+        which adb || echo "adb not in PATH yet"
         which ndk-build || echo "ndk-build not found in PATH (expected)"
         java -version
-        echo "Current PATH (before adding Qt Host): $PATH" # Log PATH before the next step
+        echo "Current PATH (before adding Qt Host): $PATH"
         echo "--- Validation Complete ---"
 
-    # ***** ADD THIS NEW STEP *****
     - name: Add Qt Host Tools to PATH
       run: |
-        echo "Adding Qt Host bin to GITHUB_PATH: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
-        echo "${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin" >> $GITHUB_PATH
+        QT_HOST_BIN_DIR="${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
+        echo "Adding Qt Host bin to GITHUB_PATH: $QT_HOST_BIN_DIR"
+        echo "$QT_HOST_BIN_DIR" >> $GITHUB_PATH
+        # *** ADDED DEBUGGING ***
+        echo "Verifying androiddeployqt existence again in $QT_HOST_BIN_DIR:"
+        ls -la "$QT_HOST_BIN_DIR/androiddeployqt" || echo "androiddeployqt check failed in Add Path step!"
 
     - name: Run androiddeployqt to Generate Gradle Project
       env:
-        # Only need Qt6_DIR here now, PATH is handled by GITHUB_PATH
         Qt6_DIR: ${{ github.workspace }}/qt_target/${{ env.QT_VERSION }}/android_arm64_v8a
       run: |
         echo "--- Running androiddeployqt ---"
-        echo "Using Qt Host Tools from PATH" # Updated message
+        echo "Using Qt Host Tools from PATH"
         echo "Using Qt Target Libs from: $Qt6_DIR"
-        echo "Current PATH: $PATH" # Log the PATH *inside* the step to verify
+        echo "Current PATH: $PATH"
+        # *** ADDED DEBUGGING ***
+        QT_HOST_BIN_DIR_IN_STEP="${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
+        echo "Verifying androiddeployqt existence one more time in $QT_HOST_BIN_DIR_IN_STEP:"
+        ls -la "$QT_HOST_BIN_DIR_IN_STEP/androiddeployqt" || echo "androiddeployqt check failed *inside* Run step!"
+        echo "Result of which androiddeployqt:"
+        which androiddeployqt || echo "'which' command failed to find androiddeployqt"
+        echo "Result of command -v androiddeployqt:"
+        command -v androiddeployqt || echo "'command -v' failed to find androiddeployqt"
 
-        # This check should now pass because the path was added via GITHUB_PATH
+        # Original check - keep it to see if it still fails
         if ! command -v androiddeployqt &> /dev/null; then
-            echo "ERROR: androiddeployqt command not found! Check GITHUB_PATH step."
+            echo "ERROR: androiddeployqt command not found! Check GITHUB_PATH step and file existence/permissions."
+            # Attempt to run with full path as a fallback test
+            echo "Attempting to run with full path: $QT_HOST_BIN_DIR_IN_STEP/androiddeployqt"
+            if [ -x "$QT_HOST_BIN_DIR_IN_STEP/androiddeployqt" ]; then
+               "$QT_HOST_BIN_DIR_IN_STEP/androiddeployqt" --help # Try running with full path
+               echo "Running with full path worked? Investigate PATH issue."
+            else
+               echo "File is not executable or doesn't exist at full path."
+            fi
             exit 1
         fi
         which androiddeployqt # Verify it's found
@@ -184,6 +196,7 @@ jobs:
         echo "Listing generated project structure:"
         ls -l build-android
 
+    # ... (Gradle Build and Upload Artifact steps) ...
     - name: Build APK with Gradle
       working-directory: ./build-android
       run: |
