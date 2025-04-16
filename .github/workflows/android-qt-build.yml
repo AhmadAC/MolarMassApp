@@ -145,20 +145,19 @@ jobs:
         echo "PATH: $PATH"
         echo "--- Validation Complete ---"
 
-
     - name: Run androiddeployqt to Generate Gradle Project
       env:
-        Qt6_DIR: ${{ github.workspace }}/qt_target/Qt/${{ env.QT_VERSION }}/android_arm64_v8a
-        PATH: ${{ github.workspace }}/qt_host/Qt/${{ env.QT_VERSION }}/gcc_64/bin:$PATH
+        Qt6_DIR: ${{ github.workspace }}/qt_target/${{ env.QT_VERSION }}/android_arm64_v8a
+        PATH: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin:$PATH
       run: |
         echo "--- Running androiddeployqt ---"
-        echo "Using Qt Host Tools from: ${{ github.workspace }}/qt_host/Qt/${{ env.QT_VERSION }}/gcc_64/bin"
+        echo "Using Qt Host Tools from: ${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin"
         echo "Using Qt Target Libs from: $Qt6_DIR"
         echo "PATH: $PATH"
 
         if ! command -v androiddeployqt &> /dev/null; then
             echo "ERROR: androiddeployqt command not found!"
-            echo "Ensure host Qt bin directory is correctly added to PATH."
+            echo "Ensure host Qt bin directory ('${{ github.workspace }}/qt_host/${{ env.QT_VERSION }}/gcc_64/bin') is correctly added to PATH."
             exit 1
         fi
 
