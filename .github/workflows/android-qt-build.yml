@@ -1,5 +1,4 @@
 # .github/workflows/android-qt-build.yml
-# RENAMED to reflect the new process
 
 name: Build Android APK (Qt for Python)
 
@@ -10,10 +9,11 @@ on:
 
 jobs:
   build-android-qt:
-    runs-on: ubuntu-latest # Or ideally: container: your-docker-image-with-qt-android-sdk-ndk:latest
+    # Using ubuntu-latest. Consider a custom Docker image for faster/more reliable builds.
+    runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Check out the repository code (Keep this)
+    # Step 1: Check out the repository code
     - name: Check out code
       uses: actions/checkout@v4
 
@@ -21,20 +21,20 @@ jobs:
     - name: Set up Java
       uses: actions/setup-java@v4
       with:
-        distribution: 'temurin' # Or another distribution like 'zulu'
-        java-version: '17'      # Gradle often requires Java 11 or 17
+        distribution: 'temurin'
+        java-version: '17' # Check Gradle requirements, 17 is common
 
-    # Step 3: Set up Python (Choose a version compatible with your PySide6)
+    # Step 3: Set up Python
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.10' # Ensure compatibility with PySide6 6.5.x
 
-    # Step 4: Install Python Dependencies (PySide6 and your app's deps)
+    # Step 4: Install Python Dependencies
     - name: Install Python Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyside6 molmass
+        pip install pyside6 molmass # Make sure PySide6 version matches Qt version below if needed
 
     # Step 5: Verify qt_for_python_android_deploy.json exists
     - name: Verify JSON config exists
@@ -44,7 +44,7 @@ jobs:
           exit 1
         fi
         echo "qt_for_python_android_deploy.json found."
-        cat qt_for_python_android_deploy.json # Log the config for debugging
+        cat qt_for_python_android_deploy.json
 
     # Step 6: Prepare Android Resources (Copy icon)
     - name: Prepare Android Resources
@@ -56,66 +56,64 @@ jobs:
         else
           echo "Warning: data/icon.png not found. App might not have an icon."
         fi
-        # If you add a custom AndroidManifest.xml or themes.xml for splash screen,
-        # ensure they are placed correctly within the 'src/' directory structure.
-        # Example: src/AndroidManifest.xml
-        # Example: src/res/values/themes.xml
+        # Place custom AndroidManifest.xml or themes.xml in 'src/' if needed
 
-    # --- Environment Setup Placeholder ---
-    # Step 7: **CRUCIAL & COMPLEX** - Install Android SDK, NDK, Qt for Android
-    # This is where you would either use a Docker container OR add lengthy steps to:
-    # 1. Download & unzip Android SDK command-line tools.
-    # 2. Use 'sdkmanager' to accept licenses and install platform-tools, build-tools (e.g., 33.0.1),
-    #    platforms (e.g., android-33), and NDK (e.g., 25.2.9519653).
-    # 3. Download & run Qt Online Installer (non-GUI mode) to install Qt Base + Qt for Android (matching ABI, e.g., android_arm64_v8a).
-    # 4. Set required environment variables (ANDROID_SDK_ROOT, ANDROID_NDK_ROOT, PATH additions).
-    - name: Setup Android/Qt Environment (Placeholder)
-      run: |
-        echo "********************************************************************"
-        echo "Placeholder: This step needs to install Android SDK, NDK, Qt for Android."
-        echo "Using a pre-built Docker image is HIGHLY recommended."
-        echo "Ensure ANDROID_SDK_ROOT, ANDROID_NDK_ROOT are set and Qt's androiddeployqt is in PATH."
-        echo "Example paths (MUST BE ADJUSTED based on actual installation):"
-        # export ANDROID_SDK_ROOT=$HOME/android/sdk
-        # export ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/25.2.9519653 # Example NDK version
-        # export QT_ANDROID_DIR=$HOME/Qt/6.5.2/android_arm64_v8a # Example Qt version/ABI
-        # export PATH=$QT_ANDROID_DIR/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
-        echo "********************************************************************"
-        # Add actual installation commands here if not using Docker, or remove if using Docker.
-        # exit 1 # Optional: Fail here if not properly configured
+    # --- Environment Setup ---
+    # Step 7: Install Qt for Android using install-qt-action
+    # This action downloads Qt, necessary Android NDK implicitly/explicitly,
+    # and sets environment variables like Qt6_DIR or QT_DIR.
+    - name: Install Qt for Android
+      uses: jurplel/install-qt-action@v3
+      with:
+        # Specify the Qt version matching your PySide6 if necessary, or latest stable
+        version: '6.5.3'
+        # Specify the target Android architecture(s)
+        arch: 'android_arm64_v8a' # Build for 64-bit ARM. Add others like 'android_armeabi_v7a' if needed.
+        # Optional: Specify extra Qt modules if your app needs them beyond Core/Gui/Widgets
+        # modules: ''
+        # Optional: Caching can speed up subsequent runs
+        # cache: 'true'
 
-    # Step 8: Run androiddeployqt
+    # Step 8: Setup Android SDK (Ensure necessary build-tools/platforms are available)
+    # While install-qt-action might bundle NDK, this ensures SDK tools are set up.
+    - name: Setup Android SDK components
+      uses: android-actions/setup-android@v3
+      # This action typically sets ANDROID_HOME and ANDROID_SDK_ROOT
+
+    # Step 9: Run androiddeployqt
     - name: Run androiddeployqt
       run: |
         # Ensure output directory exists
         mkdir -p build-android
-        # Run the deployment tool - ** ADJUST QT_PATH ** based on your installation
-        # Replace /path/to/Qt/6.x/android_arm64_v8a with the actual path in your runner environment
-        # This path depends heavily on the previous setup step or Docker image.
-        # Example: Using an environment variable set previously
-        # $QT_ANDROID_DIR/bin/androiddeployqt \
-        # Or trying a common default path (adjust version/ABI)
-        ~/Qt/6.5.3/android_arm64_v8a/bin/androiddeployqt \
+        # Use the environment variable set by install-qt-action (usually Qt6_DIR or QT_DIR)
+        # Check the action's output logs to confirm the variable name
+        echo "Using Qt directory: $Qt6_DIR" # Assumes Qt6_DIR, adjust if needed
+        $Qt6_DIR/bin/androiddeployqt \
           --input qt_for_python_android_deploy.json \
           --output build-android \
           --android-platform android-33 \
           --gradle # Generate a Gradle project (recommended)
+      # Add environment variables if setup-android didn't set them globally for subsequent steps
+      # env:
+      #   ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }} # Example if setup-android sets ANDROID_HOME
+      #   ANDROID_NDK_ROOT: # Path to NDK (often bundled by install-qt-action, might need discovery)
 
-    # Step 9: Build with Gradle
+    # Step 10: Build with Gradle
     - name: Build with Gradle
       working-directory: ./build-android # Change to the directory created by androiddeployqt
       run: |
         # Make gradlew executable
         chmod +x ./gradlew
         # Run the Gradle build for a debug APK
+        # Gradle should pick up ANDROID_SDK_ROOT/ANDROID_NDK_ROOT from environment
         ./gradlew assembleDebug
-        # For release: ./gradlew assembleRelease (requires signing setup in build.gradle)
+        # For release: ./gradlew assembleRelease (requires signing setup)
 
-    # Step 10: Upload the generated APK as an artifact
+    # Step 11: Upload the generated APK as an artifact
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
-        name: MolarMass-Android-Debug-APK # More descriptive name
+        name: MolarMass-Android-Debug-APK # Descriptive name
         # Path to the generated APK file within the Gradle project structure
         path: ./build-android/build/outputs/apk/debug/*.apk
         if-no-files-found: error # Fail if APK is not found
