@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     # Use the latest Ubuntu runner provided by GitHub Actions
-    runs-on: ubuntu-latest # Changed from ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       # Step 1: Check out the repository code
@@ -15,14 +15,11 @@ jobs:
         uses: actions/checkout@v4
 
       # Step 2: Get the current date (used for cache key)
-      # Note: Caching might be more effective using only file hashes,
-      # but this date method ensures a fresh build context periodically.
       - name: Get Date
         id: get-date
         run: echo "date=$(/bin/date -u +%Y%m%d)" >> $GITHUB_ENV
 
       # Step 3: Cache the global Buildozer downloads (SDK, NDK, etc.)
-      # Cache is invalidated if buildozer.spec changes.
       - name: Cache Buildozer global directory
         uses: actions/cache@v3
         with:
@@ -30,7 +27,6 @@ jobs:
           key: buildozer-global-${{ hashFiles('buildozer.spec') }}
 
       # Step 4: Cache the local Buildozer build directory
-      # Cache includes OS, date, and buildozer.spec hash.
       - name: Cache Buildozer local directory
         uses: actions/cache@v3
         with:
@@ -51,7 +47,7 @@ jobs:
 
       # Step 6: Upload the generated APK as an artifact
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4   # <-- UPDATED HERE
         with:
           name: package # Name of the artifact bundle
           # Path to the generated APK file, obtained from the buildozer step's output
