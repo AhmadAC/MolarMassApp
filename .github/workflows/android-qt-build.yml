@@ -1,54 +1,121 @@
-name: CI
+# .github/workflows/android-qt-build.yml
+# RENAMED to reflect the new process
+
+name: Build Android APK (Qt for Python)
 
 on:
   push:
-    branches: [ main ] # Triggers the workflow on push events for the main branch
+    branches: [ main ]
+  workflow_dispatch: # Allow manual triggering
 
 jobs:
-  build:
-    # Use the latest Ubuntu runner provided by GitHub Actions
-    runs-on: ubuntu-latest
+  build-android-qt:
+    runs-on: ubuntu-latest # Or ideally: container: your-docker-image-with-qt-android-sdk-ndk:latest
 
     steps:
-      # Step 1: Check out the repository code
-      - name: Check out code
-        uses: actions/checkout@v4
+    # Step 1: Check out the repository code (Keep this)
+    - name: Check out code
+      uses: actions/checkout@v4
 
-      # Step 2: Get the current date (used for cache key)
-      - name: Get Date
-        id: get-date
-        run: echo "date=$(/bin/date -u +%Y%m%d)" >> $GITHUB_ENV
+    # Step 2: Set up Java (Needed for Android SDK tools and Gradle)
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin' # Or another distribution like 'zulu'
+        java-version: '17'      # Gradle often requires Java 11 or 17
 
-      # Step 3: Cache the global Buildozer downloads (SDK, NDK, etc.)
-      - name: Cache Buildozer global directory
-        uses: actions/cache@v3
-        with:
-          path: ~/.buildozer_global # Correct path for global cache
-          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+    # Step 3: Set up Python (Choose a version compatible with your PySide6)
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-      # Step 4: Cache the local Buildozer build directory
-      - name: Cache Buildozer local directory
-        uses: actions/cache@v3
-        with:
-          path: .buildozer # Correct path for local project build cache
-          key: ${{ runner.os }}-${{ env.date }}-${{ hashFiles('buildozer.spec') }}
-          # Restore keys are optional but can help if the primary key misses
-          # restore-keys: |
-          #   ${{ runner.os }}-${{ env.date }}-
-          #   ${{ runner.os }}-
+    # Step 4: Install Python Dependencies (PySide6 and your app's deps)
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyside6 molmass
 
-      # Step 5: Build the Android debug APK using Buildozer
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer # Give the step an ID to reference its outputs
-        with:
-          command: buildozer android debug # The command to execute
-          buildozer_version: stable      # Use the stable release of Buildozer
+    # Step 5: Verify qt_for_python_android_deploy.json exists
+    - name: Verify JSON config exists
+      run: |
+        if [ ! -f qt_for_python_android_deploy.json ]; then
+          echo "ERROR: qt_for_python_android_deploy.json not found!"
+          exit 1
+        fi
+        echo "qt_for_python_android_deploy.json found."
+        cat qt_for_python_android_deploy.json # Log the config for debugging
 
-      # Step 6: Upload the generated APK as an artifact
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4   # <-- UPDATED HERE
-        with:
-          name: package # Name of the artifact bundle
-          # Path to the generated APK file, obtained from the buildozer step's output
-          path: ${{ steps.buildozer.outputs.filename }}
+    # Step 6: Prepare Android Resources (Copy icon)
+    - name: Prepare Android Resources
+      run: |
+        mkdir -p src/res/drawable # Create standard drawable directory in source area
+        if [ -f "data/icon.png" ]; then
+          cp data/icon.png src/res/drawable/icon.png
+          echo "Copied icon from data/icon.png to src/res/drawable/"
+        else
+          echo "Warning: data/icon.png not found. App might not have an icon."
+        fi
+        # If you add a custom AndroidManifest.xml or themes.xml for splash screen,
+        # ensure they are placed correctly within the 'src/' directory structure.
+        # Example: src/AndroidManifest.xml
+        # Example: src/res/values/themes.xml
+
+    # --- Environment Setup Placeholder ---
+    # Step 7: **CRUCIAL & COMPLEX** - Install Android SDK, NDK, Qt for Android
+    # This is where you would either use a Docker container OR add lengthy steps to:
+    # 1. Download & unzip Android SDK command-line tools.
+    # 2. Use 'sdkmanager' to accept licenses and install platform-tools, build-tools (e.g., 33.0.1),
+    #    platforms (e.g., android-33), and NDK (e.g., 25.2.9519653).
+    # 3. Download & run Qt Online Installer (non-GUI mode) to install Qt Base + Qt for Android (matching ABI, e.g., android_arm64_v8a).
+    # 4. Set required environment variables (ANDROID_SDK_ROOT, ANDROID_NDK_ROOT, PATH additions).
+    - name: Setup Android/Qt Environment (Placeholder)
+      run: |
+        echo "********************************************************************"
+        echo "Placeholder: This step needs to install Android SDK, NDK, Qt for Android."
+        echo "Using a pre-built Docker image is HIGHLY recommended."
+        echo "Ensure ANDROID_SDK_ROOT, ANDROID_NDK_ROOT are set and Qt's androiddeployqt is in PATH."
+        echo "Example paths (MUST BE ADJUSTED based on actual installation):"
+        # export ANDROID_SDK_ROOT=$HOME/android/sdk
+        # export ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/25.2.9519653 # Example NDK version
+        # export QT_ANDROID_DIR=$HOME/Qt/6.5.2/android_arm64_v8a # Example Qt version/ABI
+        # export PATH=$QT_ANDROID_DIR/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+        echo "********************************************************************"
+        # Add actual installation commands here if not using Docker, or remove if using Docker.
+        # exit 1 # Optional: Fail here if not properly configured
+
+    # Step 8: Run androiddeployqt
+    - name: Run androiddeployqt
+      run: |
+        # Ensure output directory exists
+        mkdir -p build-android
+        # Run the deployment tool - ** ADJUST QT_PATH ** based on your installation
+        # Replace /path/to/Qt/6.x/android_arm64_v8a with the actual path in your runner environment
+        # This path depends heavily on the previous setup step or Docker image.
+        # Example: Using an environment variable set previously
+        # $QT_ANDROID_DIR/bin/androiddeployqt \
+        # Or trying a common default path (adjust version/ABI)
+        ~/Qt/6.5.3/android_arm64_v8a/bin/androiddeployqt \
+          --input qt_for_python_android_deploy.json \
+          --output build-android \
+          --android-platform android-33 \
+          --gradle # Generate a Gradle project (recommended)
+
+    # Step 9: Build with Gradle
+    - name: Build with Gradle
+      working-directory: ./build-android # Change to the directory created by androiddeployqt
+      run: |
+        # Make gradlew executable
+        chmod +x ./gradlew
+        # Run the Gradle build for a debug APK
+        ./gradlew assembleDebug
+        # For release: ./gradlew assembleRelease (requires signing setup in build.gradle)
+
+    # Step 10: Upload the generated APK as an artifact
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: MolarMass-Android-Debug-APK # More descriptive name
+        # Path to the generated APK file within the Gradle project structure
+        path: ./build-android/build/outputs/apk/debug/*.apk
+        if-no-files-found: error # Fail if APK is not found
