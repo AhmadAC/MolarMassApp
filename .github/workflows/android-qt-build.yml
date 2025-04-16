@@ -39,6 +39,19 @@ jobs:
         echo "qt_for_python_android_deploy.json found."
         cat qt_for_python_android_deploy.json
 
+    - name: Validate JSON Config
+      run: |
+        if ! python -m json.tool qt_for_python_android_deploy.json; then
+          echo "ERROR: Invalid JSON format in qt_for_python_android_deploy.json!"
+          exit 1
+        fi
+        echo "JSON file is valid."
+
+    - name: Print JSON Config
+      run: |
+        echo "Contents of qt_for_python_android_deploy.json:"
+        cat qt_for_python_android_deploy.json
+
     - name: Prepare Android Resources
       run: |
         mkdir -p src/res/drawable
