@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  QT_VERSION: '6.5.0'
+  QT_VERSION: '6.5.0' # This variable is used below
   PY_VERSION: '3.11'
   JAVA_VERSION: '17'
   PYSIDE_VERSION: '6.5.0'
@@ -70,20 +70,20 @@ jobs:
           echo "Warning: Icon source '$ICON_SOURCE' not found. App might lack an icon or use a default."
         fi
 
+    # This is the step you highlighted - it installs host tools and is NOT removed
     - name: Install Qt ${{ env.QT_VERSION }} for Desktop (Host Build Tools)
       run: |
         echo "Installing Qt Host tools (Desktop Linux gcc_64)..."
-        python -m aqt install-qt linux desktop 6.5.0 gcc_64 \
-        python -m aqt list-qt linux desktop --modules 6.5.0 <arch> \
+        # This command uses env.QT_VERSION which is '6.5.0'
+        python -m aqt install-qt linux desktop ${{ env.QT_VERSION }} gcc_64 \
           --outputdir ${{ github.workspace }}/qt_host \
           --archives Tools Core Network Concurrent Widgets Gui Test Linguist
-          # Removed --noarchives
-          
+          # Removed --noarchives as it caused the error
 
     - name: Install Qt ${{ env.QT_VERSION }} for Android (Target Libraries)
       run: |
         echo "Installing Qt Target libraries (Android arm64_v8a)..."
-        python -m aqt install-qt linux desktop 6.5.0 gcc_64 \
+        python -m aqt install-qt linux android ${{ env.QT_VERSION }} android_arm64_v8a \
           --outputdir ${{ github.workspace }}/qt_target \
           --modules Qt5Compat Core Network Concurrent Widgets Gui
           # Removed --noarchives
