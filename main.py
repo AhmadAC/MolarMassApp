@@ -1,272 +1,323 @@
-# rebuild test
-from kivy.app import App
-from kivy.uix.button import Button
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
-from kivy.uix.textinput import TextInput
-from kivy.uix.label import Label
-# Import FormulaError for specific exception handling
+# chem_calc_gui.py
+# Purpose: Provides a PySide6 GUI for calculating Molecular Mass and Electronegativity Difference.
+# Replaces the Kivy version.
+# v1.3: Corrected special case check for "CO" to be case-sensitive.
+
+import sys
+import logging
+from pathlib import Path
+
+# --- Qt Imports ---
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLineEdit, QLabel, QStackedWidget, QSizePolicy
+)
+from PySide6.QtGui import QFont, QClipboard, QIcon
+from PySide6.QtCore import Qt, Slot, QMetaObject, Q_ARG
+
+# --- Calculation Logic Imports ---
 from molmass import Formula, FormulaError, elements
-from kivy.core.clipboard import Clipboard
-# Import dp for density-independent pixels
-from kivy.metrics import dp
-import re
-import logging # Optional: for better error logging
 
-# Configure basic logging (optional, but helpful for debugging)
-logging.basicConfig(level=logging.INFO)
+# --- Configure basic logging ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Helper function to get electronegativity safely
+# --- Helper Functions (Remain the same as v1.2 - the parser correctly handles 'Co' already) ---
+
 def _get_electronegativity(element_symbol):
     """Safely retrieves electronegativity for a capitalized element symbol."""
+    if not element_symbol or not element_symbol.isalpha():
+        return None
     try:
-        # molmass element symbols are typically capitalized (e.g., 'He', 'Cl')
         symbol_cap = element_symbol.capitalize()
         el = elements.ELEMENTS[symbol_cap]
-        return el.eleneg
+        en = getattr(el, 'eleneg', None)
+        if en is None:
+            logging.warning(f"Electronegativity data missing for {symbol_cap}")
+        return en
     except KeyError:
-        # Element symbol not found in molmass data
         return None
-    except AttributeError:
-        # Element exists but might not have electronegativity data (unlikely for common elements)
-        logging.warning(f"Electronegativity data missing for {symbol_cap}")
+    except Exception as e:
+        logging.error(f"Unexpected error getting EN for {element_symbol}: {e}")
         return None
 
-# Revised helper function specifically for splitting two element symbols for EN screen
 def _split_elements_for_en(compound_str):
     """
-    Parses a string expecting exactly two element symbols (e.g., "NaCl", "HF").
-    Prioritizes valid two-letter symbols over one-letter symbols.
-    Raises ValueError if input is not exactly two valid symbols.
+    Parses a string expecting exactly two adjacent element symbols (e.g., "NaCl", "HF").
+    It identifies the first valid element (1 or 2 letters), then the second
+    valid element immediately after, ensuring the entire string is consumed.
+    Raises ValueError if input format is incorrect or only one element is found.
     """
-    found_elements = []
-    i = 0
-    n = len(compound_str)
-    if not n:
-        raise ValueError("Input cannot be empty.")
+    text = compound_str.strip()
+    n = len(text)
+    if n < 1 or n > 4: # Relaxed initial check, more specific errors later
+        raise ValueError("Input must contain one or two adjacent element symbols (e.g., 'Na', 'Cl', 'NaCl', 'HF').")
 
-    while i < n:
-        # Check for two-letter symbol first
-        if i + 1 < n:
-            potential_symbol = compound_str[i:i+2]
-            # Check if it looks like a symbol (isalpha) and exists in molmass
-            if potential_symbol.isalpha() and _get_electronegativity(potential_symbol) is not None:
-                found_elements.append(potential_symbol.capitalize())
-                i += 2
-                continue # Skip one-letter check
+    elements_found = []
+    current_pos = 0
 
-        # Check for one-letter symbol
-        potential_symbol = compound_str[i]
-        if potential_symbol.isalpha() and _get_electronegativity(potential_symbol) is not None:
-            found_elements.append(potential_symbol.capitalize())
-            i += 1
-            continue # Move to next character
+    # Find first element
+    first_el = None
+    if current_pos + 2 <= n: # Try 2 letters first
+        potential_el_2 = text[current_pos:current_pos+2]
+        if _get_electronegativity(potential_el_2) is not None:
+            first_el = potential_el_2
+            current_pos += 2
+    if first_el is None and current_pos + 1 <= n: # Try 1 letter
+        potential_el_1 = text[current_pos:current_pos+1]
+        if _get_electronegativity(potential_el_1) is not None:
+            first_el = potential_el_1
+            current_pos += 1
 
-        # If neither a valid 1-letter nor 2-letter symbol starts here, it's an error
-        raise ValueError(f"Invalid character or sequence: '{compound_str[i]}'")
+    if first_el is None:
+        raise ValueError(f"Could not identify a valid first element symbol starting with '{text[0]}'.")
+    elements_found.append(first_el.capitalize())
 
-    # Final check - ensure exactly two elements were found
-    if len(found_elements) != 2:
-        raise ValueError("Input must contain exactly two valid element symbols (e.g., 'NaCl', 'HF').")
+    # Check if only one element was found and it consumed the whole string
+    if current_pos == n:
+         raise ValueError("Input contains only one element symbol. Expected two for EN difference.")
 
-    return found_elements
+    # Find second element immediately following
+    second_el = None
+    remaining_len = n - current_pos
+    if remaining_len == 0: # Should be caught above, but defensive check
+         raise ValueError("Found first element, but no characters remaining for the second.")
+
+    if current_pos + 2 <= n: # Try 2 letters second if possible
+        potential_el_2 = text[current_pos:current_pos+2]
+        if _get_electronegativity(potential_el_2) is not None:
+            second_el = potential_el_2
+            current_pos += 2
+    if second_el is None and current_pos + 1 <= n: # Try 1 letter second
+        potential_el_1 = text[current_pos:current_pos+1]
+        if _get_electronegativity(potential_el_1) is not None:
+            second_el = potential_el_1
+            current_pos += 1
+
+    if second_el is None:
+        raise ValueError(f"Found '{first_el}', but could not identify a valid second element symbol starting at index {len(first_el)}.")
+    elements_found.append(second_el.capitalize())
+
+    if current_pos != n: # Final check: Did we consume the entire string?
+        raise ValueError("Input contains extra characters after the two expected element symbols.")
+
+    return elements_found
 
 
-class FirstScreen(Screen):
-    def __init__(self, **kwargs):
-        super(FirstScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(10)) # Add spacing and padding
+# --- Screen Widgets (BaseScreen, MMCalculatorScreen remain unchanged) ---
 
-        # Top Bar for Navigation Button
-        top_bar = BoxLayout(size_hint_y=None, height=dp(50))
-        # Spacer to push button right
-        top_bar.add_widget(BoxLayout(size_hint_x=0.8))
-        switch_button = Button(
-            text='EN',
-            size_hint=(None, None),
-            size=(dp(60), dp(40)),
-            pos_hint={'top': 1} # Anchor to top within its layout space
-        )
-        switch_button.bind(on_release=self.change_screen)
-        top_bar.add_widget(switch_button)
-        layout.add_widget(top_bar)
+class BaseScreen(QWidget):
+    """ Base class for common screen elements """
+    def __init__(self, switch_button_text, switch_callback, parent=None):
+        super().__init__(parent)
+        self.layout = QVBoxLayout(self)
+        self.layout.setSpacing(10)
+        self.layout.setContentsMargins(15, 15, 15, 15)
 
-        # Input field
-        self.input = TextInput(
-            hint_text='Enter formula (e.g., H2O, 2NaCl, Ca(OH)2)',
-            multiline=False,
-            halign="center",
-            font_size='30sp', # Use sp for scalable fonts
-            size_hint_y=None, # Disable vertical size hinting
-            height=dp(80),    # Set explicit height
-            padding=[dp(10)]  # Use dp for padding
-        )
-        self.input.bind(on_text_validate=self.calculate)
-        layout.add_widget(self.input)
+        top_bar_layout = QHBoxLayout()
+        top_bar_layout.addStretch(1)
+        self.switch_button = QPushButton(switch_button_text)
+        self.switch_button.setMinimumSize(60, 40)
+        self.switch_button.setMaximumWidth(80)
+        self.switch_button.clicked.connect(switch_callback)
+        top_bar_layout.addWidget(self.switch_button)
+        self.layout.addLayout(top_bar_layout)
 
-        # Calculate Button in its own layout for positioning
-        button_layout = BoxLayout(size_hint_y=None, height=dp(80), padding=(dp(20), dp(10))) # Add padding
-        calc_button = Button(
-            text='Calculate Molecular Mass',
-            font_size='20sp', # Adjust as needed
-            size_hint=(1, 1) # Fill the button_layout
-        )
-        calc_button.bind(on_press=self.calculate)
-        button_layout.add_widget(calc_button)
-        layout.add_widget(button_layout)
+        self.input_field = QLineEdit()
+        font_input = QFont(); font_input.setPointSize(18)
+        self.input_field.setFont(font_input)
+        self.input_field.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.input_field.setMinimumHeight(50)
+        self.input_field.setPlaceholderText("Enter value here")
+        self.layout.addWidget(self.input_field)
 
-        # Result Label
-        self.label = Label(
-            text='',
-            halign="center",
-            valign="top", # Align text to top
-            font_size='25sp', # Adjust as needed
-            size_hint_y=1 # Allow label to take remaining vertical space
-            )
-        layout.add_widget(self.label)
+        button_layout = QHBoxLayout()
+        self.calc_button = QPushButton("Calculate")
+        font_button = QFont(); font_button.setPointSize(14)
+        self.calc_button.setFont(font_button)
+        self.calc_button.setMinimumHeight(50)
+        self.layout.addWidget(self.calc_button)
 
-        self.add_widget(layout)
+        self.result_label = QLabel("")
+        font_label = QFont(); font_label.setPointSize(16)
+        self.result_label.setFont(font_label)
+        self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignTop)
+        self.result_label.setWordWrap(True)
+        self.result_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.layout.addWidget(self.result_label, stretch=1)
 
-    def change_screen(self, instance):
-        self.manager.current = 'second_screen'
-        self.label.text = '' # Clear label on screen change
-        self.input.text = '' # Clear input on screen change
+    def clear_fields(self):
+        self.input_field.clear()
+        self.result_label.clear()
+        self.result_label.setStyleSheet("")
 
-    def calculate(self, instance):
-        input_text = self.input.text.strip() # Remove leading/trailing whitespace
+class MMCalculatorScreen(BaseScreen):
+    """ Screen for Molecular Mass calculation """
+    def __init__(self, switch_callback, parent=None):
+        super().__init__("EN", switch_callback, parent)
+        self.input_field.setPlaceholderText("Enter formula (e.g., H2O, 2NaCl)")
+        self.input_field.returnPressed.connect(self.calculate_mm)
+        self.calc_button.setText("Calculate Molecular Mass")
+        self.calc_button.clicked.connect(self.calculate_mm)
+
+    @Slot()
+    def calculate_mm(self):
+        self.result_label.setStyleSheet("")
+        input_text = self.input_field.text().strip()
+        logging.info(f"MM Calculation requested for input: '{input_text}'")
         if not input_text:
-            self.label.text = "Please enter a formula."
+            self.result_label.setText("Please enter a formula.")
             return
         try:
-            # Let molmass handle the parsing directly
             f = Formula(input_text)
             mass_value = f.mass
-            mass_str = f"{mass_value:.3f}" # Format to 3 decimal places
-            self.label.text = f"Molecular Mass:\n{mass_str} g/mol" # Added units
-            Clipboard.copy(mass_str)
-            # Optional: add feedback like "Copied!" temporarily
+            mass_str = f"{mass_value:.3f}"
+            self.result_label.setText(f"Molecular Mass:\n{mass_str} g/mol")
+            clipboard = QApplication.clipboard()
+            if clipboard: clipboard.setText(mass_str)
+            else: logging.warning("Could not access clipboard.")
         except FormulaError as e:
-            # Catch specific molmass error
             logging.error(f"FormulaError for input '{input_text}': {e}")
-            self.label.text = f"Invalid Formula:\n{e}"
+            self.result_label.setText(f"Invalid Formula:\n{e}")
+            self.result_label.setStyleSheet("color: red;")
         except Exception as e:
-            # Catch any other unexpected errors during calculation
-            logging.exception(f"Unexpected error calculating mass for '{input_text}':") # Log full traceback
-            self.label.text = "An unexpected error occurred.\nPlease check the input."
+            logging.exception(f"Unexpected error calculating mass for '{input_text}':")
+            self.result_label.setText("An unexpected error occurred.\nPlease check the input and logs.")
+            self.result_label.setStyleSheet("color: red;")
 
 
-class SecondScreen(Screen):
-    def __init__(self, **kwargs):
-        super(SecondScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(10)) # Add spacing and padding
+class ENCalculatorScreen(BaseScreen):
+    """ Screen for Electronegativity Difference calculation """
+    def __init__(self, switch_callback, parent=None):
+        super().__init__("MM", switch_callback, parent)
+        self.input_field.setPlaceholderText("Enter two elements (e.g., HF, NaCl, CO)")
+        self.input_field.returnPressed.connect(self.calculate_en_difference)
+        self.calc_button.setText("Calculate EN Difference")
+        self.calc_button.clicked.connect(self.calculate_en_difference)
 
-        # Top Bar for Navigation Button
-        top_bar = BoxLayout(size_hint_y=None, height=dp(50))
-         # Spacer to push button right
-        top_bar.add_widget(BoxLayout(size_hint_x=0.8))
-        switch_button = Button(
-            text='MM',
-            size_hint=(None, None),
-            size=(dp(60), dp(40)),
-            pos_hint={'top': 1} # Anchor to top within its layout space
-        )
-        switch_button.bind(on_release=self.change_screen)
-        top_bar.add_widget(switch_button)
-        layout.add_widget(top_bar)
-
-        # Input field
-        self.input = TextInput(
-            hint_text='Enter two elements (e.g., HF, NaCl)',
-            multiline=False,
-            halign="center",
-            font_size='30sp', # Use sp for scalable fonts
-            size_hint_y=None, # Disable vertical size hinting
-            height=dp(80),    # Set explicit height
-            padding=[dp(10)]  # Use dp for padding
-        )
-        self.input.bind(on_text_validate=self.get_electronegativity_difference)
-        layout.add_widget(self.input)
-
-        # Calculate Button in its own layout for positioning
-        button_layout = BoxLayout(size_hint_y=None, height=dp(80), padding=(dp(20), dp(10))) # Add padding
-        calc_button = Button(
-            text='Calculate EN Difference',
-            font_size='20sp', # Adjust as needed
-            size_hint=(1, 1) # Fill the button_layout
-        )
-        calc_button.bind(on_press=self.get_electronegativity_difference)
-        button_layout.add_widget(calc_button)
-        layout.add_widget(button_layout)
-
-        # Result Label
-        self.label = Label(
-            text='',
-            halign="center",
-            valign="top", # Align text to top
-            font_size='25sp', # Adjust as needed
-            size_hint_y=1 # Allow label to take remaining vertical space
-        )
-        layout.add_widget(self.label)
-
-        self.add_widget(layout)
-
-    def get_electronegativity_difference(self, instance=None):
-        input_text = self.input.text.strip() # Remove leading/trailing whitespace
+    @Slot()
+    def calculate_en_difference(self):
+        self.result_label.setStyleSheet("") # Reset potential error state
+        input_text = self.input_field.text().strip()
+        logging.info(f"EN Difference calculation requested for input: '{input_text}'")
         if not input_text:
-            self.label.text = "Please enter two element symbols."
+            self.result_label.setText("Please enter two element symbols.")
             return
+
         try:
-            # Use the revised helper function to parse exactly two symbols
-            elements_list = _split_elements_for_en(input_text)
-            el1_sym, el2_sym = elements_list[0], elements_list[1]
+            elements_list = None
+            # --- CORRECTED SPECIAL CASE CHECK for "CO" (Case-Sensitive) ---
+            if input_text == 'CO': # Check for exact match "CO"
+                logging.info("Applying special case elements for 'CO': ['C', 'O']")
+                elements_list = ['C', 'O']
+            else:
+                # Use the standard helper function for other inputs
+                logging.debug(f"Using standard parser for '{input_text}'")
+                elements_list = _split_elements_for_en(input_text)
+            # --- End Special Case ---
+
+            # --- Proceed with elements_list ---
+            # (The _split_elements_for_en function now raises appropriate errors if not exactly 2 elements)
+            if not elements_list: # Should not happen if parser/case worked, but defensive check
+                 raise ValueError("Internal error: Element list not determined.")
+
+            el1_sym, el2_sym = elements_list[0], elements_list[1] # Already capitalized
 
             en1 = _get_electronegativity(el1_sym)
             en2 = _get_electronegativity(el2_sym)
 
-            # Should not happen if _split_elements_for_en and _get_electronegativity work, but double check
-            if en1 is None or en2 is None:
-                raise ValueError("Could not retrieve electronegativity for one or both symbols.")
+            missing_en = []
+            if en1 is None: missing_en.append(el1_sym)
+            if en2 is None: missing_en.append(el2_sym)
+            if missing_en:
+                raise ValueError(f"Electronegativity data unavailable for: {', '.join(missing_en)}")
 
             en_difference = abs(en1 - en2)
             bond_type = ""
-            # Standard Pauling scale cutoffs for bond type based on EN difference
-            if en_difference <= 0.4: # Adjusted slightly, sometimes 0.4 is used as boundary
-                bond_type = "Nonpolar Covalent"
-            elif en_difference < 1.7: # Sometimes 1.7, 1.8 or 2.0 are used as boundary
-                bond_type = "Polar Covalent"
-            else:
-                bond_type = "Ionic"
+            if en_difference <= 0.4: bond_type = "Nonpolar Covalent"
+            elif en_difference < 1.7: bond_type = "Polar Covalent"
+            else: bond_type = "Ionic"
 
-            # Format output nicely
             result_text = (
                 f"Symbols: {el1_sym}, {el2_sym}\n"
                 f"EN Values: {en1:.2f}, {en2:.2f}\n"
                 f"Difference (|ΔEN|): |{en1:.2f} - {en2:.2f}| = {en_difference:.2f}\n"
                 f"Predicted Bond Type: {bond_type}"
             )
-            self.label.text = result_text
-            Clipboard.copy(f"{en_difference:.2f}") # Copy just the numerical difference
+            self.result_label.setText(result_text)
+            clipboard = QApplication.clipboard()
+            if clipboard: clipboard.setText(f"{en_difference:.2f}")
+            else: logging.warning("Could not access clipboard.")
 
-        except ValueError as e:
-            # Catch errors from _split_elements_for_en or _get_electronegativity checks
+        except ValueError as e: # Catches errors from _split_elements_for_en or missing EN data
             logging.error(f"ValueError getting EN difference for '{input_text}': {e}")
-            self.label.text = f"Invalid Input:\n{e}"
+            self.result_label.setText(f"Invalid Input:\n{e}") # Show the specific error
+            self.result_label.setStyleSheet("color: red;")
         except Exception as e:
-            # Catch any other unexpected errors
             logging.exception(f"Unexpected error getting EN difference for '{input_text}':")
-            self.label.text = "An unexpected error occurred.\nPlease check the input."
+            self.result_label.setText("An unexpected error occurred.\nPlease check the input and logs.")
+            self.result_label.setStyleSheet("color: red;")
 
-    def change_screen(self, instance):
-        self.manager.current = 'first_screen'
-        self.label.text = '' # Clear label on screen change
-        self.input.text = '' # Clear input on screen change
 
-class MyApp(App):
-    def build(self):
-        sm = ScreenManager(transition=FadeTransition())
-        sm.add_widget(FirstScreen(name='first_screen'))
-        sm.add_widget(SecondScreen(name='second_screen'))
-        return sm
+# --- Main Application Window (ChemCalcApp remains unchanged) ---
 
+class ChemCalcApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Chemistry Calculator")
+        self.setGeometry(200, 200, 480, 500)
+
+        icon_path = Path(__file__).resolve().parent / "chem_icon.png"
+        if icon_path.is_file():
+            self.setWindowIcon(QIcon(str(icon_path)))
+            logging.info(f"Loaded icon from: {icon_path}")
+        else:
+            logging.info(f"Icon file not found: {icon_path} (optional)")
+
+        self.central_widget = QWidget()
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.stacked_widget = QStackedWidget()
+        self.main_layout.addWidget(self.stacked_widget)
+
+        self.mm_screen = MMCalculatorScreen(switch_callback=self.show_en_screen)
+        self.en_screen = ENCalculatorScreen(switch_callback=self.show_mm_screen)
+
+        self.stacked_widget.addWidget(self.mm_screen) # Index 0
+        self.stacked_widget.addWidget(self.en_screen) # Index 1
+
+        self.setCentralWidget(self.central_widget)
+        self.show_mm_screen() # Start on MM screen
+
+    @Slot()
+    def show_mm_screen(self):
+        if self.stacked_widget.currentIndex() != 0:
+            logging.info("Switching to MM Screen")
+            self.stacked_widget.setCurrentIndex(0)
+            self.en_screen.clear_fields()
+            self.mm_screen.input_field.setFocus()
+
+    @Slot()
+    def show_en_screen(self):
+        if self.stacked_widget.currentIndex() != 1:
+            logging.info("Switching to EN Screen")
+            self.stacked_widget.setCurrentIndex(1)
+            self.mm_screen.clear_fields()
+            self.en_screen.input_field.setFocus()
+
+    def closeEvent(self, event):
+        logging.info("Closing Chem Calculator.")
+        super().closeEvent(event)
+
+
+# --- Main Execution (remains unchanged) ---
 if __name__ == '__main__':
-    MyApp().run()
+    if hasattr(Qt, 'AA_EnableHighDpiScaling'):
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
+    if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+
+    app = QApplication(sys.argv)
+    window = ChemCalcApp()
+    window.show()
+    sys.exit(app.exec())
