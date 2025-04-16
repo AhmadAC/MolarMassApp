@@ -1,5 +1,4 @@
 {
-    // --- Basic Application Identification ---
     "application-binary": "main",
     "application-display-name": "MolarMass",
     "application-package": "org.test.molarmass",
