@@ -62,27 +62,27 @@ jobs:
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.5.3'
-        # Use 'android' target arch instead of specific ABI initially
-        arch: 'android'
-        # Explicitly add Android tools (includes androiddeployqt)
-        tools: 'tools_android'
-        # Add base archives/modules that are commonly needed
-        archives: 'qtbase qtdeclarative'
-        modules: 'qttools'
+        host: 'linux'             # Host OS
+        target: 'android'         # Target Platform
+        arch: 'android_arm64_v8a' # Target ABI
+        # Request necessary modules for the Android target build
+        modules: 'qtbase qttools'
         # Optional: cache: 'true'
 
-    # Step 8: Setup Android SDK components (May still be needed for Gradle/other tools)
+    # Step 8: Setup Android SDK components
+    # Ensures SDK tools/platforms needed by Qt/Gradle are present
     - name: Setup Android SDK components
       uses: android-actions/setup-android@v3
-      # This ensures things like 'adb', 'platform-tools', necessary 'build-tools', etc. are available
 
     # Step 9: Run androiddeployqt
-    # Uses the Qt installation path provided by install-qt-action
+    # Use the Qt path provided by install-qt-action (check logs for exact variable name)
     - name: Run androiddeployqt
       run: |
         mkdir -p build-android
-        echo "Using Qt directory (likely): $Qt6_DIR or $QT_DIR" # Check action logs for exact var name
-        # Adjust variable if action uses QT_DIR instead of Qt6_DIR
+        echo "Using Qt directory (check logs for actual var): $Qt6_DIR or $QT_DIR"
+        # Adjust variable if needed (e.g., $QT_DIR)
+        # Also, the path might be slightly different for cross-compilation setups
+        # Sometimes it's in a target-specific subdirectory. Let's try the base path first.
         $Qt6_DIR/bin/androiddeployqt \
           --input qt_for_python_android_deploy.json \
           --output build-android \
@@ -94,6 +94,7 @@ jobs:
       working-directory: ./build-android
       run: |
         chmod +x ./gradlew
+        # Gradle needs ANDROID_SDK_ROOT/ANDROID_NDK_ROOT (check if set by actions)
         ./gradlew assembleDebug
 
     # Step 11: Upload APK artifact
